@@ -2,7 +2,30 @@
 .DS_Store
 Thumbs.db
 
-# optional user-supplied game assets (drop-in overrides, not source-controlled)
+# dev harness deps (installed on demand — see .harness/README.md)
+.harness/node_modules
+
+# optional user-supplied game assets (drop-in overrides)
+# Everything here is ignored by default, EXCEPT the files the project ships
+# with — those are whitelisted below on purpose (see README "Replacing the
+# placeholder art"). Add a matching "!" line when you want a new drop-in file
+# committed.
 assets/textures/*.png
 assets/sounds/*.mp3
 assets/models/**/*.glb
+
+# --- committed default art & audio (deliberate whitelist) ---
+!assets/textures/student-character.png
+!assets/textures/student-character-front.png
+!assets/textures/teacher-character.png
+!assets/textures/teacher-character-front.png
+!assets/textures/ground-gravel.png
+# full-size source renders + scenery (kept for future re-crops)
+!assets/source-art/*.png
+!assets/scenery/*.png
+!assets/sounds/jump.mp3
+!assets/sounds/collect.mp3
+!assets/sounds/hit.mp3
+!assets/sounds/teacher-alert.mp3
+!assets/sounds/gameover.mp3
+!assets/sounds/bg-music.mp3

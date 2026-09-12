@@ -40,7 +40,27 @@ export const CONFIG = {
     // ========== PLAYER CHARACTER ==========
     PLAYER: {
         SPRITE_HEIGHT: 2.5,           // Sprite scale height
-        SPRITE_WIDTH: 1.5,            // Sprite scale width
+        SPRITE_WIDTH: 1.5,            // Sprite scale width (placeholder/fallback)
+        // User PNGs rarely match 3:5 exactly. When FIT_ASPECT is true and a
+        // student-character.png is present, SPRITE_HEIGHT stays authoritative
+        // and the width is derived from the image's own aspect ratio, so the
+        // art is never stretched. MAX_SPRITE_WIDTH clamps absurdly wide art.
+        FIT_ASPECT: true,
+        MAX_SPRITE_WIDTH: 2.5,
+        // Optional FRONT render (assets/textures/student-character-front.png).
+        // A THREE.Sprite always faces the camera, so a "3D turn" is faked the
+        // way sprite-based games do it: the billboard is foreshortened on X
+        // (scale.x = W·cos(turn)) and rolled in screen space
+        // (SpriteMaterial.rotation), and the optional front render takes over
+        // whenever the body genuinely faces the camera (e.g. a stumble).
+        // Note: sprite.rotation.* has NO effect in three.js for Sprite objects
+        // — the roll must go through the material.
+        FRONT_URL: 'assets/textures/student-character-front.png',
+        VIEW_TURN: 0.16,              // implied turn (rad) per world unit of lane offset
+        VIEW_LEAN: 0.34,              // screen-space roll per radian of implied turn
+        VIEW_SWAY: 1,                 // turn smoothing rate (0 = instant, higher = snappier)
+        VIEW_MIN_SCALE: 0.55,         // clamp for the foreshortening
+        VIEW_STUMBLE_FRONT: true,     // show the front render while stumbling
         JUMP_HEIGHT: 3.5,             // How high player jumps
         JUMP_DURATION: 0.6,           // Seconds in air
         SLIDE_DURATION: 0.8,          // Slide animation time
@@ -71,7 +91,17 @@ export const CONFIG = {
         MINOR_BLUNDER_THRESHOLD: 1,   // Mistakes needed to trigger appearance
         MAJOR_BLUNDER_THRESHOLD: 3,   // Instant game over threshold
         SPRITE_HEIGHT: 3,             // Teacher sprite size
-        SPRITE_WIDTH: 2,
+        SPRITE_WIDTH: 2,              // Teacher sprite width (placeholder/fallback)
+        // Same aspect handling as the player (see CONFIG.PLAYER.FIT_ASPECT).
+        FIT_ASPECT: true,
+        MAX_SPRITE_WIDTH: 3,
+        // Same view handling as the player (see CONFIG.PLAYER.FRONT_URL).
+        FRONT_URL: 'assets/textures/teacher-character-front.png',
+        VIEW_TURN: 0.14,              // implied turn (rad) per world unit of lane offset
+        VIEW_LEAN: 0.28,
+        VIEW_SWAY: 1,
+        VIEW_MIN_SCALE: 0.6,
+        VIEW_CATCH_FRONT: true,       // face the camera for the catch pose
         FADE_DURATION: 0.5,           // Fade in/out animation time
 
         // --- Refined chase behaviour (research report §4.4) ---

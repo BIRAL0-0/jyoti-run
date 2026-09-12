@@ -46,6 +46,12 @@ export class Player {
         this.material = null;
         this.frames = null;            // {runA, runB, jump, slide} textures
         this.multiFrame = false;       // false when a single user PNG is used
+        this.usesUserArt = false;      // true when student-character.png loaded
+        this.frontTexture = null;      // optional *-front.png (view swap on turns)
+        this.viewYaw = 0;              // current pseudo-3D yaw (radians)
+        this.spriteAspect = PLAYER.SPRITE_WIDTH / PLAYER.SPRITE_HEIGHT;
+        this.spriteW = PLAYER.SPRITE_WIDTH;   // effective (aspect-fitted) width
+        this.spriteH = PLAYER.SPRITE_HEIGHT;  // effective height
         this.shadow = null;
 
         // dust particle pool (pre-allocated, reused forever)
@@ -64,10 +70,12 @@ export class Player {
      * assets/textures/student-character.png) overrides the placeholder art.
      * @param {THREE.Texture|null} userTexture
      */
-    load(userTexture) {
+    load(userTexture, frontTexture = null) {
         if (userTexture) {
             this.frames = { runA: userTexture, runB: userTexture, jump: userTexture, slide: userTexture };
             this.multiFrame = false;
+            this.usesUserArt = true;
+            this.frontTexture = frontTexture || null;
         } else {
             const art = generateStudentFrames();
             this.frames = {
@@ -77,6 +85,27 @@ export class Player {
                 slide: canvasTexture(art.slide, { mipmaps: false }),
             };
             this.multiFrame = true;
+            this.usesUserArt = false;
+            this.frontTexture = null;
+        }
+
+        // --- aspect handling (CONFIG.PLAYER.FIT_ASPECT) ---
+        // Height stays authoritative; width is derived from the source image so
+        // art with an aspect other than the 3:5 plane is letterboxed instead of
+        // stretched.
+        this.spriteH = PLAYER.SPRITE_HEIGHT;
+        this.spriteW = PLAYER.SPRITE_WIDTH;
+        if (PLAYER.FIT_ASPECT && this.usesUserArt) {
+            const img = this.frames.runA?.image;
+            const iw = img?.width || 0;
+            const ih = img?.height || 0;
+            if (iw > 0 && ih > 0) {
+                this.spriteAspect = iw / ih;
+                this.spriteW = Math.min(
+                    this.spriteH * this.spriteAspect, PLAYER.MAX_SPRITE_WIDTH);
+            }
+        } else {
+            this.spriteAspect = PLAYER.SPRITE_WIDTH / PLAYER.SPRITE_HEIGHT;
         }
 
         this.material = new THREE.SpriteMaterial({
@@ -86,14 +115,14 @@ export class Player {
         });
         this.sprite = new THREE.Sprite(this.material);
         this.sprite.center.set(0.5, 0); // pivot at the feet
-        this.sprite.scale.set(PLAYER.SPRITE_WIDTH, PLAYER.SPRITE_HEIGHT, 1);
+        this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         this.sprite.position.set(this.laneX, 0, 0);
         this.scene.add(this.sprite);
 
         // blob shadow (report §3: fake shadow for sprites)
         const shadowTex = canvasTexture(drawShadowBlob(), { mipmaps: false });
         this.shadow = new THREE.Mesh(
-            new THREE.PlaneGeometry(PLAYER.SPRITE_WIDTH * 1.05, PLAYER.SPRITE_WIDTH * 1.05),
+            new THREE.PlaneGeometry(this.spriteW * 1.05, this.spriteW * 1.05),
             new THREE.MeshBasicMaterial({
                 map: shadowTex, transparent: true, depthWrite: false,
             })
@@ -219,8 +248,8 @@ export class Player {
         // --- stumble wobble + red tint ---
         if (this.isStumbling) {
             const p = this.stumbleTimer / PLAYER.STUMBLE_DURATION;
-            const wobbleAmount = 0.14 * (1 - p);
-            this.sprite.rotation.z = Math.sin(this.stumbleTimer * 15) * wobbleAmount;
+            // the wobble itself is applied by _updateView() through
+            // material.rotation (object rotation is a no-op for THREE.Sprite)
             const tint = Math.max(0, 1 - p * 1.6);
             this.material.color.setRGB(1, 1 - 0.55 * tint, 1 - 0.55 * tint);
         } else if (this.material.color.r !== 1) {
@@ -248,18 +277,21 @@ export class Player {
                 this.material.map = tex;
                 this.material.needsUpdate = true;
             }
-            this.sprite.scale.set(PLAYER.SPRITE_WIDTH, PLAYER.SPRITE_HEIGHT, 1);
+            this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         } else {
             // single user PNG: spec's squash slide for visual differentiation
             if (this.isSliding) {
                 const p = Math.min(1, this.slideTimer / PLAYER.SLIDE_DURATION);
                 const squash = THREE.MathUtils.lerp(
-                    PLAYER.SPRITE_HEIGHT, PLAYER.SLIDE_HEIGHT, Math.sin(p * Math.PI));
+                    this.spriteH, PLAYER.SLIDE_HEIGHT, Math.sin(p * Math.PI));
                 this.sprite.scale.y = squash;
             } else {
-                this.sprite.scale.y = PLAYER.SPRITE_HEIGHT;
+                this.sprite.scale.y = this.spriteH;
             }
         }
+
+        // --- pseudo-3D view sway (needs the optional front render) ---
+        this._updateView(deltaTime);
 
         // --- apply transforms ---
         this.sprite.position.set(this.laneX, this.currentY, 0);
@@ -312,15 +344,66 @@ export class Player {
         this.frameIndex = 0;
         this.currentY = this.baseY;
         this._wasAirborne = false;
+        this.viewYaw = 0;
+        if (this.material) this.material.rotation = 0;
         if (this.sprite) {
             this.sprite.rotation.z = 0;
+            this.sprite.rotation.y = 0;
             this.sprite.position.set(this.laneX, 0, 0);
-            this.sprite.scale.set(PLAYER.SPRITE_WIDTH, PLAYER.SPRITE_HEIGHT, 1);
+            this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         }
-        if (this.material) this.material.color.setRGB(1, 1, 1);
+        if (this.material) {
+            this.material.color.setRGB(1, 1, 1);
+            if (this.frontTexture && this.material.map !== this.frames.runA) {
+                this.material.map = this.frames.runA;
+                this.material.needsUpdate = true;
+            }
+        }
         for (const d of this.dust) {
             d.life = 0;
             d.sprite.visible = false;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Pseudo-3D view (lane yaw + front/back render swap)
+    // ------------------------------------------------------------------
+
+    /**
+     * Billboard "3D" treatment (see CONFIG.PLAYER.VIEW_*).
+     *
+     * THREE.Sprite quads are rebuilt in view space every frame, so:
+     *   - object rotation is ignored entirely (rotation.z included),
+     *   - object *scale* is honoured (non-uniform OK),
+     *   - screen-space roll comes from SpriteMaterial.rotation.
+     * So the turn is faked with foreshortening + roll, and the optional front
+     * render takes over when the body really faces the camera (a stumble).
+     */
+    _updateView(deltaTime) {
+        // implied turn angle from the lane offset (0 = centre lane)
+        const laneOffset = this.laneX - LANES.POSITIONS[1];
+        const target = PLAYER.VIEW_TURN * laneOffset;
+        const rate = PLAYER.VIEW_SWAY > 0 ? PLAYER.VIEW_SWAY : 1e6;
+        this.viewYaw += (target - this.viewYaw) * Math.min(1, deltaTime * rate * 6);
+
+        // screen-space roll: lean into the turn + the stumble wobble
+        const wobble = this.isStumbling
+            ? Math.sin(this.stumbleTimer * 15) * 0.14
+                * (1 - this.stumbleTimer / PLAYER.STUMBLE_DURATION)
+            : 0;
+        this.material.rotation = -this.viewYaw * PLAYER.VIEW_LEAN + wobble;
+
+        if (!this.frontTexture) return;   // no front render -> flat card, still rolls
+
+        // foreshorten on X so the body reads as pivoting, not sliding sideways
+        const shrink = Math.max(PLAYER.VIEW_MIN_SCALE, Math.cos(this.viewYaw));
+        this.sprite.scale.x = this.spriteW * shrink;
+
+        const faceCamera = PLAYER.VIEW_STUMBLE_FRONT && this.isStumbling;
+        const tex = faceCamera ? this.frontTexture : this.frames.runA;
+        if (this.material.map !== tex) {
+            this.material.map = tex;
+            this.material.needsUpdate = true;
         }
     }
 

@@ -72,6 +72,12 @@ export class Teacher {
         this.sprite = null;
         this.material = null;
         this.frames = null;
+        this.usesUserArt = false;      // true when teacher-character.png loaded
+        this.frontTexture = null;      // optional *-front.png (view swap on turns)
+        this.viewYaw = 0;              // current pseudo-3D yaw (radians)
+        this.spriteAspect = TEACHER.SPRITE_WIDTH / TEACHER.SPRITE_HEIGHT;
+        this.spriteW = TEACHER.SPRITE_WIDTH;   // effective (aspect-fitted) width
+        this.spriteH = TEACHER.SPRITE_HEIGHT;  // effective height
         this.shadow = null;
 
         /** Optional event sink: (type: 'appear'|'surge'|'caught') => void */
@@ -82,10 +88,12 @@ export class Teacher {
      * Build the sprite. `userTexture` (assets/textures/teacher-character.png)
      * overrides the placeholder art.
      */
-    load(userTexture) {
+    load(userTexture, frontTexture = null) {
         if (userTexture) {
             this.frames = { runA: userTexture, runB: userTexture, grab: userTexture };
             this.multiFrame = false;
+            this.usesUserArt = true;
+            this.frontTexture = frontTexture || null;
         } else {
             const art = generateTeacherFrames();
             this.frames = {
@@ -94,6 +102,24 @@ export class Teacher {
                 grab: canvasTexture(art.grab, { mipmaps: false }),
             };
             this.multiFrame = true;
+            this.usesUserArt = false;
+            this.frontTexture = null;
+        }
+
+        // --- aspect handling (CONFIG.TEACHER.FIT_ASPECT) ---
+        this.spriteH = TEACHER.SPRITE_HEIGHT;
+        this.spriteW = TEACHER.SPRITE_WIDTH;
+        if (TEACHER.FIT_ASPECT && this.usesUserArt) {
+            const img = this.frames.runA?.image;
+            const iw = img?.width || 0;
+            const ih = img?.height || 0;
+            if (iw > 0 && ih > 0) {
+                this.spriteAspect = iw / ih;
+                this.spriteW = Math.min(
+                    this.spriteH * this.spriteAspect, TEACHER.MAX_SPRITE_WIDTH);
+            }
+        } else {
+            this.spriteAspect = TEACHER.SPRITE_WIDTH / TEACHER.SPRITE_HEIGHT;
         }
 
         this.material = new THREE.SpriteMaterial({
@@ -104,20 +130,51 @@ export class Teacher {
         });
         this.sprite = new THREE.Sprite(this.material);
         this.sprite.center.set(0.5, 0);
-        this.sprite.scale.set(TEACHER.SPRITE_WIDTH, TEACHER.SPRITE_HEIGHT, 1);
+        this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         this.sprite.position.set(0, 0, this.distanceFromPlayer);
         this.sprite.visible = false;
         this.scene.add(this.sprite);
 
         const shadowTex = canvasTexture(drawShadowBlob(), { mipmaps: false });
         this.shadow = new THREE.Mesh(
-            new THREE.PlaneGeometry(TEACHER.SPRITE_WIDTH * 1.1, TEACHER.SPRITE_WIDTH * 1.1),
+            new THREE.PlaneGeometry(this.spriteW * 1.1, this.spriteW * 1.1),
             new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, opacity: 0 })
         );
         this.shadow.rotation.x = -Math.PI / 2;
         this.shadow.position.set(0, 0.015, this.distanceFromPlayer);
         this.shadow.visible = false;
         this.scene.add(this.shadow);
+    }
+
+    // ------------------------------------------------------------------
+    // Pseudo-3D view (lane yaw + front/back render swap)
+    // ------------------------------------------------------------------
+
+    /**
+     * Same billboard treatment as the player (CONFIG.TEACHER.VIEW_*): sprite
+     * objects ignore their own rotation in three.js, so the roll goes through
+     * SpriteMaterial.rotation and the turn is foreshortened on X. Her front
+     * render is used for the catch pose, where she faces the camera.
+     */
+    _updateView(deltaTime) {
+        const laneOffset = this.sprite.position.x;
+        const target = TEACHER.VIEW_TURN * laneOffset;
+        const rate = TEACHER.VIEW_SWAY > 0 ? TEACHER.VIEW_SWAY : 1e6;
+        this.viewYaw += (target - this.viewYaw) * Math.min(1, deltaTime * rate * 6);
+
+        this.material.rotation = -this.viewYaw * TEACHER.VIEW_LEAN;
+
+        if (!this.frontTexture) return;
+
+        const catching = TEACHER.VIEW_CATCH_FRONT && this.state === TeacherState.CAUGHT;
+        const shrink = catching ? 1 : Math.max(TEACHER.VIEW_MIN_SCALE, Math.cos(this.viewYaw));
+        this.sprite.scale.x = this.spriteW * (catching ? 1.08 : shrink);
+
+        const tex = catching ? this.frontTexture : this.frames.runA;
+        if (this.material.map !== tex) {
+            this.material.map = tex;
+            this.material.needsUpdate = true;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -330,9 +387,10 @@ export class Teacher {
                 this.material.needsUpdate = true;
             }
             this.sprite.position.y = 0;
-            this.sprite.scale.set(
-                TEACHER.SPRITE_WIDTH * 1.08, TEACHER.SPRITE_HEIGHT * 1.08, 1);
+            this.sprite.scale.set(this.spriteW * 1.08, this.spriteH * 1.08, 1);
         }
+
+        this._updateView(deltaTime);
 
         this.shadow.position.x = this.sprite.position.x;
         this.shadow.position.z = z;
@@ -384,12 +442,21 @@ export class Teacher {
         this.catchDone = false;
         this.distanceFromPlayer = this.spawnDistance;
         this.targetDistance = TEACHER.MENACE_DISTANCE;
+        this.viewYaw = 0;
+        if (this.material) this.material.rotation = 0;
         if (this.sprite) {
+            this.sprite.rotation.y = 0;
             this.sprite.visible = false;
             this.sprite.position.set(0, 0, this.spawnDistance);
-            this.sprite.scale.set(TEACHER.SPRITE_WIDTH, TEACHER.SPRITE_HEIGHT, 1);
+            this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         }
-        if (this.material) this.material.opacity = 0;
+        if (this.material) {
+            this.material.opacity = 0;
+            if (this.frontTexture && this.material.map !== this.frames.runA) {
+                this.material.map = this.frames.runA;
+                this.material.needsUpdate = true;
+            }
+        }
         if (this.shadow) {
             this.shadow.visible = false;
             this.shadow.material.opacity = 0;
