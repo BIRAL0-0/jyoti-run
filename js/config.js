@@ -42,14 +42,14 @@ export const CONFIG = {
 
     // ========== PLAYER CHARACTER ==========
     PLAYER: {
-        SPRITE_HEIGHT: 2.5,           // Sprite scale height
-        SPRITE_WIDTH: 1.5,            // Sprite scale width (placeholder/fallback)
+        SPRITE_HEIGHT: 3.0,           // Sprite scale height
+        SPRITE_WIDTH: 1.8,            // Sprite scale width (placeholder/fallback)
         // User PNGs rarely match 3:5 exactly. When FIT_ASPECT is true and a
         // student-character.png is present, SPRITE_HEIGHT stays authoritative
         // and the width is derived from the image's own aspect ratio, so the
         // art is never stretched. MAX_SPRITE_WIDTH clamps absurdly wide art.
         FIT_ASPECT: true,
-        MAX_SPRITE_WIDTH: 2.5,
+        MAX_SPRITE_WIDTH: 3.0,
         // Optional FRONT render (assets/textures/student-character-front.png).
         // A THREE.Sprite always faces the camera, so a "3D turn" is faked the
         // way sprite-based games do it: the billboard is foreshortened on X
@@ -84,15 +84,15 @@ export const CONFIG = {
 
     // ========== TEACHER CHASE MECHANIC ==========
     // State machine: HIDDEN -> CHASING -> FADING_OUT -> HIDDEN
-    //                            \-> CAUGHT (3rd mistake or sustained contact)
+    //                            \-> CAUGHT (2nd mistake or sustained contact)
     // Fairness guards from the research report §4.4.
     TEACHER: {
         APPEAR_DISTANCE: 12,          // Normalisation distance for warning intensity
         CATCH_DISTANCE: 1.5,          // "Caught" contact distance
         CHASE_SPEED_MULTIPLIER: 1.3,  // Teacher runs 30% faster than the player
-        RECOVERY_DISTANCE: 100,       // Clean metres to run to hide the teacher
+        RECOVERY_DISTANCE: 150,       // Clean metres to run to hide the teacher
         MINOR_BLUNDER_THRESHOLD: 1,   // Mistakes needed to trigger appearance
-        MAJOR_BLUNDER_THRESHOLD: 3,   // Instant game over threshold
+        MAJOR_BLUNDER_THRESHOLD: 2,   // Instant game over threshold
         SPRITE_HEIGHT: 3,             // Teacher sprite size
         SPRITE_WIDTH: 2,              // Teacher sprite width (placeholder/fallback)
         // Same aspect handling as the player (see CONFIG.PLAYER.FIT_ASPECT).
@@ -109,16 +109,18 @@ export const CONFIG = {
 
         // --- Refined chase behaviour (research report §4.4) ---
         // The teacher spawns between the camera and the player (positive Z is
-        // "behind" the runner). She eases in to a hover distance, surges
-        // closer after the 2nd mistake, and eases back as mistakes decay.
+        // "behind" the runner). She eases in to a hover distance, then eases
+        // back as the single tolerated mistake decays. The 2nd mistake is the
+        // catch (MAJOR_BLUNDER_THRESHOLD = 2), so the surge path below is
+        // dormant but left live should the threshold ever return to 3.
         SPAWN_MARGIN: 2.6,            // how far in front of the camera she fades in
         MENACE_DISTANCE: 5.5,         // hover distance after 1st mistake
         SURGE_DISTANCE: 3.2,          // hover distance after 2nd mistake
         SURGE_BOOST: 1.0,             // extra approach speed multiplier on surge (0.6 s)
         SURGE_DURATION: 0.6,
-        AGGRO_CLEAN_METERS: 40,       // clean metres over which chase multiplier eases 1.3 -> 1.0
+        AGGRO_CLEAN_METERS: 120,      // clean metres over which chase multiplier eases 1.3 -> 1.0
         RELAX_RATE: 1.5,              // u/s at which she drifts back out after mistake decay
-        MISTAKE_DECAY_METERS: 50,     // -1 mistake per 50 m of clean running
+        MISTAKE_DECAY_METERS: 150,    // -1 mistake per 150 m of clean running (== RECOVERY_DISTANCE)
         CATCH_SUSTAIN: 0.4,           // <= CATCH_DISTANCE sustained this long (s) = caught
         FADE_GRACE: 0.5,              // no catch checks during fade-in
         LUNGE_GRACE_DISTANCE: 1.6,    // holds here if contact while mid-jump/slide...
@@ -159,9 +161,9 @@ export const CONFIG = {
                 requiresJump: true,
                 models: ['desk', 'crate', 'bench'],
                 variants: [
-                    { id: 'desk',  halfW: 0.85, halfD: 0.55, yMin: 0,    yMax: 1.15 },
-                    { id: 'crate', halfW: 0.72, halfD: 0.55, yMin: 0,    yMax: 1.15 },
-                    { id: 'bench', halfW: 0.85, halfD: 0.45, yMin: 0,    yMax: 1.0  },
+                    { id: 'desk',  halfW: 0.85, halfD: 0.55, yMin: 0,    yMax: 1.725 },
+                    { id: 'crate', halfW: 0.72, halfD: 0.55, yMin: 0,    yMax: 1.725 },
+                    { id: 'bench', halfW: 0.85, halfD: 0.45, yMin: 0,    yMax: 1.5  },
                 ],
             },
             HIGH: {                    // Must slide under
@@ -202,6 +204,16 @@ export const CONFIG = {
             red:        0xd9534f,
             lockerBlue: 0x3d5fbf,
         },
+
+        // Per-type vertical scale applied to the merged geometry AND its
+        // collision yMin/yMax (the latter are baked into TYPES[].variants
+        // above, so keep these in sync). Owner review: desks/crates/benches
+        // were too small next to the ×1.2 character, so LOW furniture is 1.5×.
+        HEIGHT_SCALE: {
+            LOW: 1.5,
+            HIGH: 1,
+            BLOCKER: 1,
+        },
     },
 
     // ========== COLLECTIBLES (GRADE PAPERS) ==========
@@ -221,6 +233,7 @@ export const CONFIG = {
         PAPER_HEIGHT: 1.35,
         POOL_SIZE: 14,                // max concurrent papers (mobile: fewer)
         COMBO_WINDOW: 1.5,            // seconds between collects to keep combo
+        A_PLUS_SHAKE: 0,              // camera-shake intensity on an A+ pickup (0 = off)
 
         PATTERNS: ['line', 'across', 'arc', 'zigzag'], // Spawn patterns
         PATTERN_STEP: 2.6,            // metres between papers inside a pattern
@@ -267,18 +280,18 @@ export const CONFIG = {
 
     // ========== ROADSIDE DECOR ==========
     // Plants sit OUTSIDE the fence, in the verge between railing and
-    // buildings (see CONFIG.CAMPUS for the full cross-section).
+    // buildings (see CONFIG.CAMPUS for the full cross-section). Trees and
+    // bushes only — rocks and traffic cones were pure road clutter that
+    // clashed with the semi-realistic buildings.
     DECOR: {
-        SPACING: 9,                   // metres between decor slots (per side)
-        LANE_OFFSET_MIN: 11.6,        // decor starts this far from track centre
+        SPACING: 13,                  // metres between decor slots (per side)
+        LANE_OFFSET_MIN: 12.5,        // decor starts this far from track centre
         LANE_OFFSET_VAR: 4.0,         // + random outward scatter
         SCALE_MIN: 0.9,               // slightly bigger now they sit further out
         SCALE_VAR: 0.8,
         TYPES: [
-            { id: 'tree',  weight: 0.50 },
-            { id: 'bush',  weight: 0.20 },
-            { id: 'rock',  weight: 0.15 },
-            { id: 'cone',  weight: 0.15 },
+            { id: 'tree',  weight: 0.7 },
+            { id: 'bush',  weight: 0.3 },
         ],
         COLORS: {
             trunk:  0x8b5a2b,
@@ -331,16 +344,16 @@ export const CONFIG = {
         BUILDINGS: {
             ENABLED: true,
             INNER_X: 17.0,            // closest face, from track centre
-            DEPTH: 15,                // how deep they run away from the track
-            SPACING: 30,              // metres between buildings along z
-            GAP_VAR: 8,               // + random extra gap
-            HEIGHT_VAR: 0.25,         // +/- fraction of height jitter
+            DEPTH: 18,                // how deep they run away from the track
+            SPACING: 20,              // metres between buildings along z
+            GAP_VAR: 1,               // + random extra gap
+            HEIGHT_VAR: 0.10,         // +/- fraction of height jitter
             // One InstancedMesh per variant (1 draw call each). Height is
             // baked into the geometry so the window grid never stretches.
             VARIANTS: [
-                { w: 24, h: 27, floors: 7, cols: 8 },
-                { w: 18, h: 19, floors: 5, cols: 6 },
-                { w: 28, h: 33, floors: 9, cols: 9 },
+                { w: 24, h: 36, floors: 9, cols: 8 },
+                { w: 18, h: 28, floors: 7, cols: 6 },
+                { w: 28, h: 44, floors: 11, cols: 9 },
             ],
             WALL_COLOR: '#e6c469',    // yellow school wall
             WALL_SHADE: '#cfab52',    // recessed/shadowed band
@@ -394,10 +407,12 @@ export const CONFIG = {
             OPACITY: 1,
         },
 
-        // Landmarks the runner passes through. Each entry is a recycling ring:
-        // COUNT billboards spaced SPACING metres apart, looping back once they
-        // pass RECYCLE_BEHIND metres behind the camera. PHASE offsets one ring
-        // against the next so landmarks alternate instead of stacking.
+        // Landmarks the runner passes through. Each entry is either a
+        // recycling ring (REPEAT: true, the default — COUNT billboards spaced
+        // SPACING metres apart, looping back once they pass the camera) or a
+        // one-shot (REPEAT: false — one billboard that scrolls past once and
+        // never returns). PHASE offsets a landmark against the others so they
+        // alternate instead of stacking.
         RECYCLE_BEHIND: 26,
         LANDMARKS: [
             {
@@ -410,23 +425,10 @@ export const CONFIG = {
                 COUNT: 2,
                 SPACING: 110,         // metres between gates
                 PHASE: 30,            // run STARTS by leaving through the gate
+                REPEAT: false,        // one gate only — it must never come back
                 SEGMENTS: 1,          // billboards per landmark
                 SEGMENT_STEP: 0,
                 OPACITY: 1,
-            },
-            {
-                ID: 'corridor',
-                ENABLED: true,
-                URL: 'assets/scenery/school-corridor.png',
-                HEIGHT: 20,
-                MAX_WIDTH: 40,
-                Y: 9.8,
-                COUNT: 2,
-                SPACING: 150,         // long gap: a corridor stretch is an event
-                PHASE: 78,            // just past the first gate
-                SEGMENTS: 3,          // consecutive arches = a walkway to run through
-                SEGMENT_STEP: 15,
-                OPACITY: 0.96,
             },
         ],
     },
