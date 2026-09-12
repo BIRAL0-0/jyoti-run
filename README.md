@@ -92,6 +92,21 @@ assets/textures/
   console/network tab when the files are absent — that's expected and
   harmless.)
 
+**Shipped defaults.** The texture slots above are optional and stay on the
+procedural placeholders until you add files; `assets/sounds/` already ships a
+complete synthesized mp3 set (below). `.gitignore` ignores
+`assets/textures/*.png` and `assets/sounds/*.mp3` by default and re-includes
+the shipped files with `!`-exceptions — add a matching `!` line when you want a
+new drop-in file committed.
+
+**Aspect handling.** The sprite planes are 1.5 × 2.5 (student) and 2 × 3
+(teacher) world units. Art whose ratio differs is **letterboxed, never
+stretched**: `CONFIG.PLAYER.FIT_ASPECT` / `CONFIG.TEACHER.FIT_ASPECT` keep the
+plane height authoritative and derive the width from the image's own aspect
+(`MAX_SPRITE_WIDTH` clamps extremes). Set them to `false` in `js/config.js` for
+the original stretch-to-plane behaviour. Collision boxes are unaffected either
+way — they live in `CONFIG.PLAYER.COLLISION_RADIUS` / `CONFIG.OBSTACLES.TYPES`.
+
 ### Adding real sounds (optional)
 
 ```
@@ -100,6 +115,10 @@ assets/sounds/
 ├── teacher-alert.mp3  gameover.mp3
 └── bg-music.mp3        ← loops
 ```
+
+The repository ships this exact set (synthesized for the project), so the
+Howler path is active out of the box; overwrite any file with your own
+recording — the file names are the contract.
 
 If `bg-music.mp3` exists, the game lazy-loads **Howler.js 2.2.4** (pinned CDN
 URL) and plays whatever files are present; any missing file falls back to the
@@ -203,7 +222,7 @@ Browsers without WebGL or import-map support get a friendly fallback screen.
 │       ├── Difficulty.js       # speed/spawn/tier curves (report §4.3)
 │       ├── placeholderArt.js   # ALL procedural art (swappable)
 │       └── AssetLoader.js      # optional-file probes + fallbacks
-├── assets/                     # empty by default — drop-in overrides
+├── assets/                     # shipped sprites/audio + drop-in overrides
 ├── scripts/download-assets.sh  # optional CC0 asset fetcher (Phase 1)
 └── research/RESEARCH_REPORT.md # Phase 1 research
 ```
@@ -215,7 +234,9 @@ Browsers without WebGL or import-map support get a friendly fallback screen.
 - [Howler.js 2.2.4](https://howlerjs.com) (MIT) — optional real-file audio
 - Vanilla ES modules — no build tools, no frameworks
 
-**Procedural placeholder art & synth audio** generated in-code at load.
+**Procedural placeholder art & synth audio** generated in-code at load. The
+shipped `assets/sounds/*.mp3` set was synthesized for this project with a
+pure-JS MP3 encoder (no third-party samples), under the same MIT license.
 
 **Optional real assets (CC0 / free licenses)** researched in Phase 1:
 - 3D props: [Kenney Furniture Kit](https://kenney.nl/assets/furniture-kit),
