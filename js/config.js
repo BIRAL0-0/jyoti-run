@@ -56,8 +56,8 @@ export const CONFIG = {
         // Note: sprite.rotation.* has NO effect in three.js for Sprite objects
         // — the roll must go through the material.
         FRONT_URL: 'assets/textures/student-character-front.png',
-        VIEW_TURN: 0.10,              // implied turn (rad) per world unit of lane offset
-        VIEW_LEAN: 0.30,              // screen-space roll per radian of implied turn
+        VIEW_TURN: 0.16,              // implied turn (rad) per world unit of lane offset
+        VIEW_LEAN: 0.34,              // screen-space roll per radian of implied turn
         VIEW_SWAY: 1,                 // turn smoothing rate (0 = instant, higher = snappier)
         VIEW_MIN_SCALE: 0.55,         // clamp for the foreshortening
         VIEW_STUMBLE_FRONT: true,     // show the front render while stumbling
@@ -97,8 +97,8 @@ export const CONFIG = {
         MAX_SPRITE_WIDTH: 3,
         // Same view handling as the player (see CONFIG.PLAYER.FRONT_URL).
         FRONT_URL: 'assets/textures/teacher-character-front.png',
-        VIEW_TURN: 0.10,              // implied turn (rad) per world unit of lane offset
-        VIEW_LEAN: 0.25,
+        VIEW_TURN: 0.14,              // implied turn (rad) per world unit of lane offset
+        VIEW_LEAN: 0.28,
         VIEW_SWAY: 1,
         VIEW_MIN_SCALE: 0.6,
         VIEW_CATCH_FRONT: true,       // face the camera for the catch pose
