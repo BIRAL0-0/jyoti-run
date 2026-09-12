@@ -19,7 +19,7 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { CONFIG, GROUND, DECOR, SKY } from '../config.js';
+import { CONFIG, GROUND, DECOR, SKY, CAMPUS } from '../config.js';
 import { canvasTexture } from '../utils/AssetLoader.js';
 import { drawGroundTexture, drawCloud } from '../utils/placeholderArt.js';
 
@@ -31,6 +31,7 @@ export class GroundManager {
 
         this.tileGroup = null;        // moving ring of ground tiles
         this.tileMesh = null;         // InstancedMesh
+        this.lawnMesh = null;         // the two grass strips either side
         this.decorGroup = null;       // moving decor lattice
         this.clouds = [];
         this.usesPlaceholderArt = true;
@@ -86,26 +87,62 @@ export class GroundManager {
     // ------------------------------------------------------------------
     // Grass apron + curbs (static framing)
     // ------------------------------------------------------------------
+    /**
+     * Lawn either side of the track, plus the legacy kerb strips.
+     *
+     * The lawn used to be ONE full-width plane sitting 0.05 below the road
+     * tiles. Overlapping two near-coplanar planes z-fought at grazing angles
+     * (it read as "grass glitching under the road"), and the 0.05 drop meant
+     * nothing else could sit flush on it.
+     *
+     * It is now two strips that start *under the pavement* and never pass
+     * beneath the road, so they can sit at exactly y = 0 — the same level as
+     * the road tiles. Fence, plants and buildings all snap to that one plane.
+     */
     _buildApron() {
         const span = GROUND.VISIBLE_TILES * GROUND.TILE_LENGTH + 80;
-        const grass = new THREE.Mesh(
-            new THREE.PlaneGeometry(240, span),
-            new THREE.MeshLambertMaterial({ color: GROUND.GRASS_COLOR })
-        );
-        grass.rotation.x = -Math.PI / 2;
-        grass.position.set(0, -0.05, -span / 2 + 60);
-        this.scene.add(grass);
+        const zCentre = -span / 2 + 60;
 
-        const curbGeo = new THREE.BoxGeometry(GROUND.CURB_WIDTH, GROUND.CURB_HEIGHT, span);
-        const curbMat = new THREE.MeshLambertMaterial({ color: CONFIG.OBSTACLES.COLORS.blue });
-        for (const side of [-1, 1]) {
-            const curb = new THREE.Mesh(curbGeo, curbMat);
-            curb.position.set(
-                side * (GROUND.TILE_WIDTH / 2 + GROUND.CURB_WIDTH / 2),
-                GROUND.CURB_HEIGHT / 2,
-                -span / 2 + 60
+        // tuck the inner edge under the pavement so no seam can show through
+        const inner = CAMPUS.ENABLED && CAMPUS.SIDEWALK.ENABLED
+            ? CAMPUS.SIDEWALK.INNER_X + CAMPUS.SIDEWALK.WIDTH - 0.2
+            : GROUND.TILE_WIDTH / 2;
+        const width = GROUND.APRON_WIDTH / 2 - inner;
+
+        if (width > 0) {
+            const geo = new THREE.PlaneGeometry(width, span);
+            geo.rotateX(-Math.PI / 2);                 // lie flat at y = 0
+            const lawn = new THREE.InstancedMesh(
+                geo,
+                new THREE.MeshLambertMaterial({ color: GROUND.GRASS_COLOR }),
+                2,
             );
-            this.scene.add(curb);
+            lawn.receiveShadow = true;
+            const m = new THREE.Matrix4();
+            [-1, 1].forEach((side, i) => {
+                m.makeTranslation(side * (inner + width / 2), 0, zCentre);
+                lawn.setMatrixAt(i, m);
+            });
+            lawn.instanceMatrix.needsUpdate = true;
+            this.scene.add(lawn);
+            this.lawnMesh = lawn;
+        }
+
+        // Legacy blue kerb strips. The campus pavement has its own kerb lip,
+        // so these are only built when the sidewalk is switched off — leaving
+        // both on put two solids in the same place (the "glitched" barrier).
+        if (!(CAMPUS.ENABLED && CAMPUS.SIDEWALK.ENABLED)) {
+            const curbGeo = new THREE.BoxGeometry(GROUND.CURB_WIDTH, GROUND.CURB_HEIGHT, span);
+            const curbMat = new THREE.MeshLambertMaterial({ color: CONFIG.OBSTACLES.COLORS.blue });
+            for (const side of [-1, 1]) {
+                const curb = new THREE.Mesh(curbGeo, curbMat);
+                curb.position.set(
+                    side * (GROUND.TILE_WIDTH / 2 + GROUND.CURB_WIDTH / 2),
+                    GROUND.CURB_HEIGHT / 2,
+                    zCentre,
+                );
+                this.scene.add(curb);
+            }
         }
     }
 

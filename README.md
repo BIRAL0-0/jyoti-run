@@ -92,10 +92,38 @@ assets/textures/
   fill the plane height and anchors the feet centre-bottom. The result is an
   exact-ratio, transparent-background texture — nothing is stretched.
 - On boot the game silently probes for these files; if one is missing it uses
-  the procedural version instead. (The probes show as 404s in the DevTools
-  console/network tab when the files are absent — that's expected and
-  harmless. `ground-gravel.png` is the one optional file with no committed
-  default, so that single 404 is normal.)
+  the procedural version instead. (The probe shows as a 404 in the DevTools
+  console/network tab when a file is absent — that's expected and harmless.)
+- Every texture slot now ships a committed default, so a clean clone has
+  **zero** 404s. Delete any file above to fall back to procedural art.
+
+**The ground tile.** `assets/textures/ground-gravel.png` is a real 1024×1024
+seamless tile derived from `assets/source-art/ground-gravel-source.png` by
+`.harness/art/make-ground-tile.mjs`. The source was a perspective photo
+(portrait, transparent above the horizon), so the script finds the largest
+fully-opaque square, flattens alpha, and applies a **wrap cross-fade**: each
+edge pixel blends with its sample one tile away, which turns the wrap-around
+seam into an ordinary interior adjacency.
+
+Seam score, measured as "wrap-around neighbour difference ÷ average interior
+neighbour difference" on the finished tile:
+
+| | before | after |
+|---|---|---|
+| columns | ×6.6 | **×0.64** |
+| rows | ×4.8 | **×0.70** |
+
+Below 1.0 means the seam is *quieter* than the texture's own average pixel
+pair — i.e. the repeat is invisible. Re-run or re-tune with:
+
+```bash
+cd .harness && npm install pngjs
+node art/make-ground-tile.mjs \
+  ../assets/source-art/ground-gravel-source.png \
+  ../assets/textures/ground-gravel.png 1024 64 0 641 780
+#                          tile size ^^^^  ^  ^^^^^^^^^ crop
+#                            fade band ^^^^
+```
 
 **Faking 3D turns.** A `THREE.Sprite` always faces the camera, and three.js
 rebuilds its quad in view space every frame — so **object rotation on a Sprite
@@ -146,11 +174,53 @@ If `bg-music.mp3` exists, the game lazy-loads **Howler.js 2.2.4** (pinned CDN
 URL) and plays whatever files are present; any missing file falls back to the
 built-in Web-Audio synthesis. No game code needs to change.
 
-### Scenery
+**Regenerating them.** The mp3s are synthesized, and the generator is
+committed — `.harness/audio/make-sounds.mjs` mirrors `AudioManager._synth`
+voice for voice (same waveforms, frequencies, envelopes, chiptune note
+tables). Tweak a number there and re-encode:
 
-`assets/scenery/` holds the supplied school photos (corridor, gate arch, gate
-avenue) for future use — a start-screen backdrop, a menu scene, decals, etc.
-Nothing loads them yet, so they cost nothing at runtime.
+```bash
+cd .harness
+npm install --no-save @breezystack/lamejs     # NOT plain `lamejs` — it's broken under Node
+node audio/make-sounds.mjs                    # rewrites all six
+node audio/make-sounds.mjs jump hit           # or just these
+node audio/make-sounds.mjs --dry-run          # render + report, write nothing
+node audio/make-sounds.mjs --out /tmp/sfx     # audition before overwriting
+```
+
+> The committed mp3s were produced by an earlier (uncommitted) build of this
+> script, so re-running it changes the bytes and the timings slightly
+> (e.g. `hit` 0.34 s → 0.63 s). Nothing listens to audio in CI, so **audition
+> with `--out` before you overwrite the shipped set.**
+
+### Scenery & the school campus
+
+`assets/scenery/` holds the supplied school renders. All three are wired up as
+billboards by `js/managers/SceneryManager.js`, every number in
+`CONFIG.SCENERY` (delete any file and its slot silently disappears):
+
+| File | Role | Config |
+|---|---|---|
+| `school-gate-avenue.png` | distant horizon backdrop, locked to the camera so it never gets closer | `SCENERY.HORIZON` |
+| `school-gate-arch.png` | the gate you run **out through** at the start, then every 110 m | `SCENERY.LANDMARKS[0]` |
+| `school-corridor.png` | a 3-arch walkway you run through, then every 150 m | `SCENERY.LANDMARKS[1]` |
+
+That gives the flow *school gate → long corridor → endless repeat*. Widths are
+derived from each image's own aspect ratio, so nothing is stretched.
+
+The campus itself (`js/managers/CampusManager.js`, all of `CONFIG.CAMPUS`) is
+procedural and lays the world out as:
+
+```
+Building | Plants | Fence | Sidewalk | ROAD | Sidewalk | Fence | Plants | Building
+   17m      11.6m    9.6m     6–9m     ±6m
+```
+
+Sidewalk, railings and each of the three yellow building blocks are one
+InstancedMesh apiece, and each band recycles by snapping back one period — the
+same trick as the ground tiles — so the street runs forever for ~6 draw calls.
+Buildings stop just past the fog wall on purpose: any further out they'd be
+drawn as flat fog colour while still occluding the horizon backdrop.
 
 ### Adding 3D models (optional, advanced)
 
@@ -182,6 +252,18 @@ DEBUG: {
 URL params `?desktop=1` / `?mobile=1` force desktop/mobile tuning (useful for
 testing). `window.__game` exposes the live game instance in the console.
 
+### Mistakes, and the "three dots"
+
+The runner gets **three mistakes**, not one: the teacher appears on the first,
+surges closer on the second, and catches you on the third. Run 100 m clean and
+she gives up. The three red dots that used to count them are **hidden by
+default** (`CONFIG.UI.SHOW_MISTAKE_PIPS = false`) because they read as "health
+icons" — the pressure cue is now the red vignette around the screen edges.
+
+- Want the dots back? `CONFIG.UI.SHOW_MISTAKE_PIPS = true`.
+- Want a brutal one-hit game? `CONFIG.TEACHER.MAJOR_BLUNDER_THRESHOLD = 1`.
+  One line, no code change — she appears and catches you on the first mistake.
+
 ### Difficulty at a glance
 
 | Distance | Papers | Speed | Obstacles |
@@ -193,15 +275,69 @@ testing). `window.__game` exposes the live game instance in the console.
 Speed ramps 15 → 45 units/s at +0.5/s; obstacle spawn chance eases from
 25% → 65% between 500–1500 m (smoothstep — no difficulty cliffs).
 
-## 🌐 Deployment
+## 🌐 Deployment — share it with a friend
 
-**GitHub Pages**
-1. Push this repo to GitHub
-2. *Settings → Pages → Source: Deploy from branch → `main` / root*
-3. Live at `https://<user>.github.io/jyoti-run/`
+The game is 100% static files (no build step), so any static host works and
+GitHub Pages is free.
 
-**Netlify** — drag the repo folder onto [netlify.com/drop](https://app.netlify.com/drop)
-for an instant URL. **itch.io** also works (zip the folder, upload as HTML5 game).
+### Option A: GitHub Pages (recommended — permanent, free)
+
+Do this **once**. Five clicks, no terminal:
+
+1. Open <https://github.com/BIRAL0-0/jyoti-run> and make sure the latest code
+   is on `main` (it is — everything is merged).
+2. Click **Settings** (the gear tab, top-right of the repo page).
+   - If you don't see it, the repo isn't yours / you're not an admin.
+3. In the left sidebar, under *Code and automation*, click **Pages**.
+4. Under **Build and deployment → Source**, choose **Deploy from a branch**
+   (not "GitHub Actions").
+5. Under **Branch**, pick **`main`** and leave the folder as **`/ (root)`**,
+   then click **Save**.
+6. Wait ~1–2 minutes. GitHub shows a green box: *"Your site is live at
+   …"*. Refresh the page until it appears.
+
+**Your share link:**
+
+```
+https://biral0-0.github.io/jyoti-run/
+```
+
+Send that to anyone — no login needed, works on phone and desktop.
+
+> **Updating the site later:** Pages republishes automatically on every push
+> to `main`. After a change, wait ~1–2 min and hard-refresh
+> (<kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd>) to bust
+> the cache.
+
+**Troubleshooting:** *404 on the link* → the build may still be running, or
+the branch/folder was set wrong. Check **Settings → Pages** for the status
+line, or the **Actions** tab for a failed `pages build and deployment` run.
+
+### Option B: instant link, zero setup (good for a quick share)
+
+jsDelivr serves any public GitHub repo as a CDN, so this works right now with
+no configuration:
+
+```
+https://cdn.jsdelivr.net/gh/BIRAL0-0/jyoti-run@main/index.html
+```
+
+Caveat: jsDelivr caches `@main` for up to ~12 hours, so edits can lag. Swap
+`@main` for a commit SHA to pin an exact version forever.
+
+### Option C: Netlify / itch.io
+
+- **Netlify** — drag the repo folder onto [netlify.com/drop](https://app.netlify.com/drop)
+  for an instant URL.
+- **itch.io** — zip the folder and upload it as an HTML5 game.
+
+### Running it locally
+
+Any static server works (ES modules and textures don't load from `file://`):
+
+```bash
+python3 -m http.server 8000     # then open http://localhost:8000
+```
 
 ## 🖥️ Browser Compatibility
 

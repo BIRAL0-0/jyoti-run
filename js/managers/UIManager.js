@@ -32,7 +32,15 @@ export class UIManager {
         this.muteBtn = $('mute-btn');
         this.pauseBtn = $('pause-btn');
         this.bestLine = $('best-line');
+        // Mistake pips. Off by default (owner review #3: they read as "health
+        // icons", which is misleading). The pressure cue is now purely the red
+        // warning vignette. Set CONFIG.UI.SHOW_MISTAKE_PIPS = true to bring
+        // the three dots back — the underlying 3-mistake rule is unchanged.
         this.mistakePips = $('mistake-pips');
+        if (this.mistakePips && !CONFIG.UI.SHOW_MISTAKE_PIPS) {
+            this.mistakePips.remove();
+            this.mistakePips = null;
+        }
 
         // overlays
         this.warningOverlay = $('warning-overlay');

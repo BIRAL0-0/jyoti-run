@@ -26,6 +26,9 @@ export const CONFIG = {
         CURB_WIDTH: 0.6,              // blue curb strips at the track edge
         CURB_HEIGHT: 0.3,
         GRASS_COLOR: 0x7ec850,        // schoolyard lawn beyond the curbs
+        // Width of the lawn apron. It only has to reach past the buildings —
+        // beyond that the fog takes over (see LIGHTING.FOG.far).
+        APRON_WIDTH: 130,
     },
 
     // ========== LANE SYSTEM ==========
@@ -263,12 +266,14 @@ export const CONFIG = {
     },
 
     // ========== ROADSIDE DECOR ==========
+    // Plants sit OUTSIDE the fence, in the verge between railing and
+    // buildings (see CONFIG.CAMPUS for the full cross-section).
     DECOR: {
         SPACING: 9,                   // metres between decor slots (per side)
-        LANE_OFFSET_MIN: 7.6,         // decor starts this far from track centre
-        LANE_OFFSET_VAR: 3.4,         // + random outward scatter
-        SCALE_MIN: 0.8,
-        SCALE_VAR: 0.7,
+        LANE_OFFSET_MIN: 11.6,        // decor starts this far from track centre
+        LANE_OFFSET_VAR: 4.0,         // + random outward scatter
+        SCALE_MIN: 0.9,               // slightly bigger now they sit further out
+        SCALE_VAR: 0.8,
         TYPES: [
             { id: 'tree',  weight: 0.50 },
             { id: 'bush',  weight: 0.20 },
@@ -287,16 +292,143 @@ export const CONFIG = {
         },
     },
 
+    // ========== SCHOOL CAMPUS ==========
+    // Cross-section, centre of the track outwards (item 2 of the owner's
+    // review). Everything here is procedural and periodic, so it recycles
+    // forever with the same group-shift trick as the ground tiles:
+    //
+    //   Building | Plants | Fence | Sidewalk | ROAD | Sidewalk | Fence | Plants | Building
+    //
+    // Each band is one or two InstancedMeshes, so the whole campus costs a
+    // handful of draw calls no matter how far it runs.
+    CAMPUS: {
+        ENABLED: true,
+
+        // Paved strip either side of the road, raised like a real kerb.
+        SIDEWALK: {
+            ENABLED: true,
+            INNER_X: 6.0,             // road edge (GROUND.TILE_WIDTH / 2)
+            WIDTH: 3.0,
+            HEIGHT: 0.3,
+            COLOR: 0xd9d3c5,
+            KERB_COLOR: 0xb5ae9e,     // darker lip facing the road
+        },
+
+        // Green school railings between the sidewalk and the planted verge.
+        FENCE: {
+            ENABLED: true,
+            X: 9.6,                   // distance from track centre
+            PANEL_SPACING: 5,         // metres between posts
+            POST_HEIGHT: 1.5,
+            POST_WIDTH: 0.12,
+            RAIL_HEIGHT: 0.1,
+            RAIL_Y: [0.55, 1.15],     // two horizontal rails
+            COLOR: 0x3f7d4a,
+            POST_COLOR: 0x2f5f38,
+        },
+
+        // Tall yellow school buildings, receding into the fog.
+        BUILDINGS: {
+            ENABLED: true,
+            INNER_X: 17.0,            // closest face, from track centre
+            DEPTH: 15,                // how deep they run away from the track
+            SPACING: 30,              // metres between buildings along z
+            GAP_VAR: 8,               // + random extra gap
+            HEIGHT_VAR: 0.25,         // +/- fraction of height jitter
+            // One InstancedMesh per variant (1 draw call each). Height is
+            // baked into the geometry so the window grid never stretches.
+            VARIANTS: [
+                { w: 24, h: 27, floors: 7, cols: 8 },
+                { w: 18, h: 19, floors: 5, cols: 6 },
+                { w: 28, h: 33, floors: 9, cols: 9 },
+            ],
+            WALL_COLOR: '#e6c469',    // yellow school wall
+            WALL_SHADE: '#cfab52',    // recessed/shadowed band
+            WINDOW_COLOR: '#4d6f8c',
+            WINDOW_GLASS: '#7d9db8',
+            FRAME_COLOR: '#f4f1e8',
+            PLINTH_COLOR: '#8d6a4a',  // stone base course
+            CORNICE_COLOR: '#b8863f', // roof trim
+        },
+    },
+
     // ========== SKY & CLOUDS ==========
     SKY: {
         COLOR: 0x87CEEB,              // bright cartoon sky
-        FOG_COLOR: 0x87CEEB,          // fog matches sky for a seamless horizon
+        // Vertical gradient "skybox". HORIZON must stay equal to
+        // LIGHTING.FOG.color or the haze band will show a hard seam.
+        GRADIENT: {
+            ENABLED: true,
+            TOP: '#4f9fd8',           // deeper blue overhead
+            HORIZON: '#cfe6f5',       // pale haze down at the skyline
+        },
+        FOG_COLOR: 0xcfe6f5,          // == GRADIENT.HORIZON (seamless horizon)
         CLOUD_COUNT: 6,
         CLOUD_DRIFT: 0.4,             // u/s sideways drift
         CLOUD_SPREAD_X: 46,
         CLOUD_MIN_Y: 13,
         CLOUD_MAX_Y: 24,
         CLOUD_Z: -70,
+    },
+
+    // ========== SCENERY BILLBOARDS ==========
+    // The scenery renders in assets/scenery/ are drop-in billboards. Every
+    // slot is optional: a missing file (or SCENERY.ENABLED = false) leaves the
+    // procedural world exactly as it was, so an empty assets/ is unaffected.
+    // Widths are DERIVED from each image's own aspect ratio (height is
+    // authoritative), so no scenery art is ever stretched.
+    SCENERY: {
+        ENABLED: true,
+
+        // Distant backdrop, re-anchored to the camera every frame so it never
+        // gets closer (same "infinite distance" trick as a skybox).
+        // fog is disabled on it, otherwise FOG.far would wash it out entirely.
+        HORIZON: {
+            ENABLED: true,
+            URL: 'assets/scenery/school-gate-avenue.png',
+            HEIGHT: 74,               // world units tall
+            MAX_WIDTH: 200,           // clamp for unexpectedly wide art
+            Y: 25,                    // centre height
+            DISTANCE: 200,            // metres ahead of the camera
+            PARALLAX: 0.1,            // lateral drift vs camera x (0 = pinned)
+            OPACITY: 1,
+        },
+
+        // Landmarks the runner passes through. Each entry is a recycling ring:
+        // COUNT billboards spaced SPACING metres apart, looping back once they
+        // pass RECYCLE_BEHIND metres behind the camera. PHASE offsets one ring
+        // against the next so landmarks alternate instead of stacking.
+        RECYCLE_BEHIND: 26,
+        LANDMARKS: [
+            {
+                ID: 'gate',
+                ENABLED: true,
+                URL: 'assets/scenery/school-gate-arch.png',
+                HEIGHT: 18,
+                MAX_WIDTH: 34,
+                Y: 8.6,               // feet of the arch sit just below ground
+                COUNT: 2,
+                SPACING: 110,         // metres between gates
+                PHASE: 30,            // run STARTS by leaving through the gate
+                SEGMENTS: 1,          // billboards per landmark
+                SEGMENT_STEP: 0,
+                OPACITY: 1,
+            },
+            {
+                ID: 'corridor',
+                ENABLED: true,
+                URL: 'assets/scenery/school-corridor.png',
+                HEIGHT: 20,
+                MAX_WIDTH: 40,
+                Y: 9.8,
+                COUNT: 2,
+                SPACING: 150,         // long gap: a corridor stretch is an event
+                PHASE: 78,            // just past the first gate
+                SEGMENTS: 3,          // consecutive arches = a walkway to run through
+                SEGMENT_STEP: 15,
+                OPACITY: 0.96,
+            },
+        ],
     },
 
     // ========== CAMERA ==========
@@ -306,8 +438,8 @@ export const CONFIG = {
         FAR: 1000,                    // Far clipping plane
         POSITION_OFFSET: {            // Offset from player
             x: 0,
-            y: 5,                     // Height above player
-            z: 10                     // Distance behind player
+            y: 4.0,                   // Height above player (was 5 — too high)
+            z: 9.2                    // Distance behind player (was 10)
         },
         LOOK_AHEAD_DISTANCE: 8,       // How far ahead to look
         FOLLOW_SMOOTHNESS: 0.1,       // Camera lerp factor (0.1 = smooth, 1 = instant)
@@ -341,9 +473,9 @@ export const CONFIG = {
         },
         FOG: {
             enabled: true,
-            color: 0x87CEEB,          // matches SKY.COLOR for a seamless horizon
-            near: 30,
-            far: 100
+            color: 0xcfe6f5,          // == SKY.GRADIENT.HORIZON (seamless)
+            near: 55,                 // haze starts beyond the playfield...
+            far: 265                  // ...and the campus dissolves into it
         }
     },
 
@@ -386,6 +518,10 @@ export const CONFIG = {
 
     // ========== UI / HUD ==========
     UI: {
+        // The three HUD dots counted your mistakes. They read as "health", so
+        // they are off by default — the pressure cue is the red vignette.
+        // Set true to bring them back; the 3-mistake rule never changes.
+        SHOW_MISTAKE_PIPS: false,
         POPUP_POOL_SIZE: 8,
         TOAST_DURATION: 3200,
         START_SCREEN_SCROLL_SPEED: 8, // ambient world scroll behind the menu
@@ -420,6 +556,8 @@ export const CONFIG = {
             paperPool: 10,
             decorDensity: 0.6,        // fraction of decor slots populated
             anisotropy: 4,
+            campusBuildingVariants: 2,// drop the tallest block (1 less draw call)
+            scenerySegments: 1,       // corridor = 1 billboard instead of a run
         },
         DESKTOP_ANISOTROPY: 8,
     },
@@ -442,7 +580,9 @@ export const TEACHER = CONFIG.TEACHER;
 export const OBSTACLES = CONFIG.OBSTACLES;
 export const GRADES = CONFIG.GRADES;
 export const DECOR = CONFIG.DECOR;
+export const CAMPUS = CONFIG.CAMPUS;
 export const SKY = CONFIG.SKY;
+export const SCENERY = CONFIG.SCENERY;
 export const CAMERA = CONFIG.CAMERA;
 export const LIGHTING = CONFIG.LIGHTING;
 export const AUDIO = CONFIG.AUDIO;

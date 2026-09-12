@@ -606,3 +606,128 @@ export function generateTeacherFrames() {
         grab: drawTeacher('grab'),
     };
 }
+
+/**
+ * Paving slabs for the campus sidewalk — light concrete with darker joints.
+ * The grid lines sit ON the canvas edges, so the two halves of each line
+ * join up when the texture tiles (seamless in both axes).
+ */
+export function drawPavingTexture() {
+    const S = 256;
+    const { canvas, ctx } = makeCanvas(S, S);
+    ctx.fillStyle = '#d9d3c5';
+    ctx.fillRect(0, 0, S, S);
+
+    // fine speckle so large slabs do not read as flat colour
+    for (let i = 0; i < 3000; i++) {
+        const a = Math.random() * 0.055;
+        ctx.fillStyle = Math.random() < 0.5 ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`;
+        ctx.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+    }
+
+    ctx.strokeStyle = '#b5ae9e';
+    ctx.lineWidth = 5;
+    const n = 2, cell = S / n;
+    for (let i = 0; i <= n; i++) {
+        ctx.beginPath(); ctx.moveTo(i * cell, 0); ctx.lineTo(i * cell, S); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i * cell); ctx.lineTo(S, i * cell); ctx.stroke();
+    }
+    return canvas;
+}
+
+/**
+ * Facade for one school building variant: stone plinth, yellow wall with a
+ * recessed band per floor, and a grid of framed windows. Sized to the
+ * variant's floor/column count so the window grid is never stretched.
+ *
+ * Note: CampusManager maps this to all six faces of a box (one material, one
+ * draw call). The roof is never visible — the camera sits far below the
+ * parapet — so the extra faces cost nothing.
+ *
+ * @param {{floors:number, cols:number}} v  building variant from config
+ */
+export function drawBuildingFacade(v) {
+    const cell = 56;
+    const plinth = Math.round(cell * 0.55);
+    const cornice = Math.round(cell * 0.5);
+    const W = v.cols * cell;
+    const H = v.floors * cell + plinth + cornice;
+    const { canvas, ctx } = makeCanvas(W, H);
+
+    const C = {
+        wall: '#e6c469', shade: '#cfab52', window: '#4d6f8c',
+        glass: '#7d9db8', frame: '#f4f1e8', plinth: '#8d6a4a', cornice: '#b8863f',
+    };
+
+    // wall
+    ctx.fillStyle = C.wall;
+    ctx.fillRect(0, 0, W, H);
+
+    // grime gradient (semi-realistic: dirt settles low)
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, 'rgba(255,255,255,0.14)');
+    g.addColorStop(0.55, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(60,40,10,0.18)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // floors, bottom-up: row 0 is the ground floor
+    for (let f = 0; f < v.floors; f++) {
+        const yTop = H - cornice - (f + 1) * cell;
+        // recessed band under each floor slab
+        ctx.fillStyle = C.shade;
+        ctx.fillRect(0, yTop + cell - 9, W, 9);
+
+        for (let c = 0; c < v.cols; c++) {
+            const ww = Math.round(cell * 0.56);
+            const wh = Math.round(cell * 0.6);
+            const x = c * cell + (cell - ww) / 2;
+            const y = yTop + (cell - wh) / 2 + 2;
+
+            // frame
+            ctx.fillStyle = C.frame;
+            ctx.fillRect(x - 4, y - 4, ww + 8, wh + 8);
+            // glass
+            ctx.fillStyle = C.window;
+            ctx.fillRect(x, y, ww, wh);
+            // a believable highlight + the odd lit/unlit room
+            const lit = Math.random() < 0.22;
+            ctx.fillStyle = lit ? '#f6e7b4' : C.glass;
+            ctx.fillRect(x, y, ww, Math.round(wh * 0.42));
+            // mullion
+            ctx.fillStyle = C.frame;
+            ctx.fillRect(x + Math.round(ww / 2) - 2, y, 4, wh);
+        }
+    }
+
+    // stone plinth + roof cornice
+    ctx.fillStyle = C.plinth;
+    ctx.fillRect(0, H - plinth, W, plinth);
+    ctx.fillStyle = C.cornice;
+    ctx.fillRect(0, 0, W, cornice);
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    ctx.fillRect(0, cornice - 6, W, 6);
+
+    return canvas;
+}
+
+/**
+ * Vertical sky gradient used as the scene background ("skybox" without a cube
+ * map). The bottom colour IS the horizon colour, and LIGHTING.FOG.color is
+ * pinned to the same value, so distant buildings dissolve into the sky with
+ * no visible seam.
+ *
+ * @param {string} top      zenith colour
+ * @param {string} horizon  colour at the horizon line
+ */
+export function drawSkyGradient(top, horizon) {
+    const W = 4, H = 256;
+    const { canvas, ctx } = makeCanvas(W, H);
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, top);
+    g.addColorStop(0.62, horizon);
+    g.addColorStop(1, horizon);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    return canvas;
+}

@@ -22,6 +22,8 @@ no internet route** to the CDNs the game loads at runtime.
 ```bash
 cd .harness
 npm install puppeteer-core@23 three@0.160.0 howler@2.2.4 @sparticuz/chromium pngjs
+npm install @breezystack/lamejs      # only for audio/make-sounds.mjs
+#                                      (plain `lamejs` is broken under Node)
 node -e "import('@sparticuz/chromium').then(m=>m.default.executablePath())"   # extracts /tmp/chromium
 ./build-deps.sh                                                               # ABI stubs
 cd tests
