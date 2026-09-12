@@ -47,6 +47,15 @@ export const CONFIG = {
         // art is never stretched. MAX_SPRITE_WIDTH clamps absurdly wide art.
         FIT_ASPECT: true,
         MAX_SPRITE_WIDTH: 2.5,
+        // Optional FRONT render (assets/textures/student-character-front.png).
+        // When present the sprite yaws into the lane change and swaps to the
+        // front view on the far half of the turn, so the runner reads as a 3D
+        // model pivoting instead of a flat card. Absent -> sway only.
+        FRONT_URL: 'assets/textures/student-character-front.png',
+        VIEW_YAW: 0.10,               // radians of yaw per world unit of lane offset
+        VIEW_SWAY: 1,                 // yaw smoothing rate (0 = instant, >1 = snappier)
+        VIEW_FLIP: 0.12,              // |yaw| (rad) at which the front render takes over
+        VIEW_IDLE: 0.05,              // idle sway amplitude while running (rad)
         JUMP_HEIGHT: 3.5,             // How high player jumps
         JUMP_DURATION: 0.6,           // Seconds in air
         SLIDE_DURATION: 0.8,          // Slide animation time
@@ -81,6 +90,12 @@ export const CONFIG = {
         // Same aspect handling as the player (see CONFIG.PLAYER.FIT_ASPECT).
         FIT_ASPECT: true,
         MAX_SPRITE_WIDTH: 3,
+        // Same view handling as the player (see CONFIG.PLAYER.FRONT_URL).
+        FRONT_URL: 'assets/textures/teacher-character-front.png',
+        VIEW_YAW: 0.10,
+        VIEW_SWAY: 1,
+        VIEW_FLIP: 0.12,
+        VIEW_IDLE: 0.04,
         FADE_DURATION: 0.5,           // Fade in/out animation time
 
         // --- Refined chase behaviour (research report §4.4) ---

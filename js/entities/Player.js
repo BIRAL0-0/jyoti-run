@@ -47,6 +47,8 @@ export class Player {
         this.frames = null;            // {runA, runB, jump, slide} textures
         this.multiFrame = false;       // false when a single user PNG is used
         this.usesUserArt = false;      // true when student-character.png loaded
+        this.frontTexture = null;      // optional *-front.png (view swap on turns)
+        this.viewYaw = 0;              // current pseudo-3D yaw (radians)
         this.spriteAspect = PLAYER.SPRITE_WIDTH / PLAYER.SPRITE_HEIGHT;
         this.spriteW = PLAYER.SPRITE_WIDTH;   // effective (aspect-fitted) width
         this.spriteH = PLAYER.SPRITE_HEIGHT;  // effective height
@@ -68,11 +70,12 @@ export class Player {
      * assets/textures/student-character.png) overrides the placeholder art.
      * @param {THREE.Texture|null} userTexture
      */
-    load(userTexture) {
+    load(userTexture, frontTexture = null) {
         if (userTexture) {
             this.frames = { runA: userTexture, runB: userTexture, jump: userTexture, slide: userTexture };
             this.multiFrame = false;
             this.usesUserArt = true;
+            this.frontTexture = frontTexture || null;
         } else {
             const art = generateStudentFrames();
             this.frames = {
@@ -83,6 +86,7 @@ export class Player {
             };
             this.multiFrame = true;
             this.usesUserArt = false;
+            this.frontTexture = null;
         }
 
         // --- aspect handling (CONFIG.PLAYER.FIT_ASPECT) ---
@@ -111,6 +115,8 @@ export class Player {
         });
         this.sprite = new THREE.Sprite(this.material);
         this.sprite.center.set(0.5, 0); // pivot at the feet
+        // yaw-then-tilt order so the stumble roll and the view yaw compose cleanly
+        this.sprite.rotation.order = 'YXZ';
         this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         this.sprite.position.set(this.laneX, 0, 0);
         this.scene.add(this.sprite);
@@ -286,6 +292,9 @@ export class Player {
             }
         }
 
+        // --- pseudo-3D view sway (needs the optional front render) ---
+        this._updateView(deltaTime);
+
         // --- apply transforms ---
         this.sprite.position.set(this.laneX, this.currentY, 0);
 
@@ -337,15 +346,53 @@ export class Player {
         this.frameIndex = 0;
         this.currentY = this.baseY;
         this._wasAirborne = false;
+        this.viewYaw = 0;
         if (this.sprite) {
             this.sprite.rotation.z = 0;
+            this.sprite.rotation.y = 0;
             this.sprite.position.set(this.laneX, 0, 0);
             this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         }
-        if (this.material) this.material.color.setRGB(1, 1, 1);
+        if (this.material) {
+            this.material.color.setRGB(1, 1, 1);
+            if (this.frontTexture && this.material.map !== this.frames.runA) {
+                this.material.map = this.frames.runA;
+                this.material.needsUpdate = true;
+            }
+        }
         for (const d of this.dust) {
             d.life = 0;
             d.sprite.visible = false;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Pseudo-3D view (lane yaw + front/back render swap)
+    // ------------------------------------------------------------------
+
+    /**
+     * Yaw the billboard as the player changes lanes and swap to the front
+     * render on the far half of the turn — the two supplied stills then read
+     * as one 3D body pivoting (CONFIG.PLAYER.VIEW_*). With no front render the
+     * sprite simply stays flat.
+     */
+    _updateView(deltaTime) {
+        if (!this.frontTexture) return;
+
+        const laneOffset = this.laneX - LANES.POSITIONS[1];
+        const idle = Math.sin(this.runBobTimer * 0.5) * PLAYER.VIEW_IDLE;
+        const target = laneOffset * PLAYER.VIEW_YAW + idle;
+
+        const rate = PLAYER.VIEW_SWAY > 0 ? PLAYER.VIEW_SWAY : 1e6;
+        const k = Math.min(1, deltaTime * rate * 6);
+        this.viewYaw += (target - this.viewYaw) * k;
+        this.sprite.rotation.y = this.viewYaw;
+
+        const wantFront = this.viewYaw < -PLAYER.VIEW_FLIP;
+        const tex = wantFront ? this.frontTexture : this.frames.runA;
+        if (this.material.map !== tex) {
+            this.material.map = tex;
+            this.material.needsUpdate = true;
         }
     }
 

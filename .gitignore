@@ -13,8 +13,13 @@ assets/models/**/*.glb
 
 # --- committed default art & audio (deliberate whitelist) ---
 !assets/textures/student-character.png
+!assets/textures/student-character-front.png
 !assets/textures/teacher-character.png
+!assets/textures/teacher-character-front.png
 !assets/textures/ground-gravel.png
+# full-size source renders + scenery (kept for future re-crops)
+!assets/source-art/*.png
+!assets/scenery/*.png
 !assets/sounds/jump.mp3
 !assets/sounds/collect.mp3
 !assets/sounds/hit.mp3

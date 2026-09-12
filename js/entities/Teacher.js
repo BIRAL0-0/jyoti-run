@@ -73,6 +73,8 @@ export class Teacher {
         this.material = null;
         this.frames = null;
         this.usesUserArt = false;      // true when teacher-character.png loaded
+        this.frontTexture = null;      // optional *-front.png (view swap on turns)
+        this.viewYaw = 0;              // current pseudo-3D yaw (radians)
         this.spriteAspect = TEACHER.SPRITE_WIDTH / TEACHER.SPRITE_HEIGHT;
         this.spriteW = TEACHER.SPRITE_WIDTH;   // effective (aspect-fitted) width
         this.spriteH = TEACHER.SPRITE_HEIGHT;  // effective height
@@ -86,11 +88,12 @@ export class Teacher {
      * Build the sprite. `userTexture` (assets/textures/teacher-character.png)
      * overrides the placeholder art.
      */
-    load(userTexture) {
+    load(userTexture, frontTexture = null) {
         if (userTexture) {
             this.frames = { runA: userTexture, runB: userTexture, grab: userTexture };
             this.multiFrame = false;
             this.usesUserArt = true;
+            this.frontTexture = frontTexture || null;
         } else {
             const art = generateTeacherFrames();
             this.frames = {
@@ -100,6 +103,7 @@ export class Teacher {
             };
             this.multiFrame = true;
             this.usesUserArt = false;
+            this.frontTexture = null;
         }
 
         // --- aspect handling (CONFIG.TEACHER.FIT_ASPECT) ---
@@ -126,6 +130,7 @@ export class Teacher {
         });
         this.sprite = new THREE.Sprite(this.material);
         this.sprite.center.set(0.5, 0);
+        this.sprite.rotation.order = 'YXZ';   // view yaw + catch lean compose cleanly
         this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         this.sprite.position.set(0, 0, this.distanceFromPlayer);
         this.sprite.visible = false;
@@ -140,6 +145,36 @@ export class Teacher {
         this.shadow.position.set(0, 0.015, this.distanceFromPlayer);
         this.shadow.visible = false;
         this.scene.add(this.shadow);
+    }
+
+    // ------------------------------------------------------------------
+    // Pseudo-3D view (lane yaw + front/back render swap)
+    // ------------------------------------------------------------------
+
+    /**
+     * Same treatment as the player (CONFIG.TEACHER.VIEW_*): she yaws as she
+     * weaves toward the player's lane and shows her front render on the far
+     * half of the turn. No front render -> the sprite stays flat.
+     */
+    _updateView(deltaTime) {
+        if (!this.frontTexture) return;
+
+        const laneOffset = this.sprite.position.x;
+        this._viewTimer = (this._viewTimer || 0) + deltaTime;
+        const idle = Math.sin(this._viewTimer * 0.5) * TEACHER.VIEW_IDLE;
+        const target = laneOffset * TEACHER.VIEW_YAW + idle;
+
+        const rate = TEACHER.VIEW_SWAY > 0 ? TEACHER.VIEW_SWAY : 1e6;
+        const k = Math.min(1, deltaTime * rate * 6);
+        this.viewYaw += (target - this.viewYaw) * k;
+        this.sprite.rotation.y = this.viewYaw;
+
+        const wantFront = this.viewYaw < -TEACHER.VIEW_FLIP;
+        const tex = wantFront ? this.frontTexture : this.frames.runA;
+        if (this.material.map !== tex) {
+            this.material.map = tex;
+            this.material.needsUpdate = true;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -355,6 +390,8 @@ export class Teacher {
             this.sprite.scale.set(this.spriteW * 1.08, this.spriteH * 1.08, 1);
         }
 
+        this._updateView(deltaTime);
+
         this.shadow.position.x = this.sprite.position.x;
         this.shadow.position.z = z;
         this.shadow.material.opacity = 0.8 * this.opacity;
@@ -405,12 +442,21 @@ export class Teacher {
         this.catchDone = false;
         this.distanceFromPlayer = this.spawnDistance;
         this.targetDistance = TEACHER.MENACE_DISTANCE;
+        this.viewYaw = 0;
+        this._viewTimer = 0;
         if (this.sprite) {
+            this.sprite.rotation.y = 0;
             this.sprite.visible = false;
             this.sprite.position.set(0, 0, this.spawnDistance);
             this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         }
-        if (this.material) this.material.opacity = 0;
+        if (this.material) {
+            this.material.opacity = 0;
+            if (this.frontTexture && this.material.map !== this.frames.runA) {
+                this.material.map = this.frames.runA;
+                this.material.needsUpdate = true;
+            }
+        }
         if (this.shadow) {
             this.shadow.visible = false;
             this.shadow.material.opacity = 0;

@@ -33,7 +33,9 @@ import { probeExisting, loadImageTexture } from './utils/AssetLoader.js';
 const TEXTURE_URLS = {
     ground: 'assets/textures/ground-gravel.png',
     student: 'assets/textures/student-character.png',
+    studentFront: PLAYER.FRONT_URL,
     teacher: 'assets/textures/teacher-character.png',
+    teacherFront: TEACHER.FRONT_URL,
 };
 
 class SchoolRunnerGame {
@@ -246,10 +248,17 @@ class SchoolRunnerGame {
         const teacherTex = existing.has(TEXTURE_URLS.teacher)
             ? await loadImageTexture(TEXTURE_URLS.teacher, { mipmaps: false })
             : null;
+        // optional front renders: turn the two stills into a pivoting body
+        const studentFrontTex = existing.has(TEXTURE_URLS.studentFront)
+            ? await loadImageTexture(TEXTURE_URLS.studentFront, { mipmaps: false })
+            : null;
+        const teacherFrontTex = existing.has(TEXTURE_URLS.teacherFront)
+            ? await loadImageTexture(TEXTURE_URLS.teacherFront, { mipmaps: false })
+            : null;
 
         this.ground.load(groundTex, this.decorDensity);
-        this.player.load(studentTex);
-        this.teacher.load(teacherTex);
+        this.player.load(studentTex, studentFrontTex);
+        this.teacher.load(teacherTex, teacherFrontTex);
         this.obstacles.init();
         this.collectibles.init();
         await this.audio.load();
