@@ -186,7 +186,7 @@ async function suiteBoot(browser) {
     rep.check('Howler active with all 6 mp3s', info.howler && info.howls === 6, info.howlKeys.join(','));
     rep.check('student art is the supplied render, 3:5',
       info.student.userArt && info.student.front
-      && Math.abs(info.student.scale[0] - 1.5) < 0.01 && Math.abs(info.student.scale[1] - 2.5) < 0.01,
+      && Math.abs(info.student.scale[0] - 1.8) < 0.01 && Math.abs(info.student.scale[1] - 3.0) < 0.01,
       `plane ${info.student.scale.join('×')}, image ${info.student.img.join('×')}, aspect ${info.student.aspect.toFixed(3)}`);
     rep.check('teacher art is the supplied render, 2:3',
       info.teacher.userArt && info.teacher.front
@@ -201,25 +201,23 @@ async function suiteBoot(browser) {
       && info.groundTex.repeat[0] === 1
       && info.groundTex.repeat[1] === info.groundRepeatY,
       info.groundTex ? `repeat ${info.groundTex.repeat.join('×')}, wrapping ${info.groundTex.wrapping}` : 'no texture');
-    rep.check('all three scenery billboards load',
+    rep.check('scenery billboards load (horizon + one-shot gate)',
       info.scenery.usesPlaceholderArt === false
-      && ['horizon', 'gate', 'corridor'].every((k) => info.scenery.loaded.includes(k)),
+      && ['horizon', 'gate'].every((k) => info.scenery.loaded.includes(k))
+      && !info.scenery.loaded.includes('corridor'),
       info.scenery.loaded.join(',') || 'none');
     rep.check('scenery widths follow each image aspect (no stretch)',
       Math.abs(info.scenery.horizon.w - 74 * (1024 / 1536)) < 0.01
       && Math.abs(info.scenery.horizon.h - 74) < 0.01
       && Math.abs(info.scenery.rings[0].w - 18 * 1.5) < 0.01
-      && Math.abs(info.scenery.rings[0].h - 18) < 0.01
-      && Math.abs(info.scenery.rings[1].w - 20 * 1.5) < 0.01
-      && Math.abs(info.scenery.rings[1].h - 20) < 0.01,
+      && Math.abs(info.scenery.rings[0].h - 18) < 0.01,
       `horizon ${info.scenery.horizon.w}×${info.scenery.horizon.h}, `
-      + `gate ${info.scenery.rings[0].w}×${info.scenery.rings[0].h}, `
-      + `corridor ${info.scenery.rings[1].w}×${info.scenery.rings[1].h}`);
-    rep.check('landmark rings recycle (gate 110 m, corridor 150 m × 3 arches)',
-      info.scenery.rings.length === 2
-      && info.scenery.rings[0].count === 2 && info.scenery.rings[0].spacing === 110
-      && info.scenery.rings[1].count === 6 && info.scenery.rings[1].spacing === 150,
-      info.scenery.rings.map((r) => `${r.count}@${r.spacing}m`).join(' '));
+      + `gate ${info.scenery.rings[0].w}×${info.scenery.rings[0].h}`);
+    rep.check('gate is a one-shot (REPEAT false, single billboard)',
+      info.scenery.rings.length === 1
+      && info.scenery.rings[0].count === 1
+      && info.scenery.rings[0].repeat === false,
+      info.scenery.rings.map((r) => `${r.count}@${r.spacing}m repeat=${r.repeat}`).join(' '));
     rep.check('campus bands built: sidewalk + fence + 3 building variants',
       info.campus.enabled
       && info.campus.bands.some((b) => b.id === 'sidewalk')
@@ -247,8 +245,8 @@ async function suiteBoot(browser) {
       Math.abs(ga.road.minY) < 0.001 && Math.abs(ga.lawn.minY) < 0.001
       && ga.lawn.clearGap >= ga.road.outerX - 0.001,
       `road y${ga.road.minY} out to |x|${ga.road.outerX}; lawn y${ga.lawn.minY}, nearest edge |x|${ga.lawn.clearGap}`);
-    rep.check('player fills 15-20% of screen height (camera lowered)',
-      info.playerScreenHeight >= 0.15 && info.playerScreenHeight <= 0.20,
+    rep.check('player fills 18-24% of screen height (camera lowered)',
+      info.playerScreenHeight >= 0.18 && info.playerScreenHeight <= 0.24,
       `${(info.playerScreenHeight * 100).toFixed(1)}% of screen height`);
     rep.check('draw calls within budget (<=51 at start)', info.drawCalls <= 51, `${info.drawCalls}`);
     rep.check('debug surface complete',
@@ -259,6 +257,12 @@ async function suiteBoot(browser) {
       info.storage.PREFIX === 'schoolrunner' && info.storage.BEST_SCORE_KEY === 'best.score');
     rep.check('tuning contract values unchanged',
       info.configKeys.speed.join() === '15,45,0.5' && info.configKeys.spawn.join() === '0.25,0.65');
+
+    const decor = await g.page.evaluate(() => window.__game.config.DECOR.TYPES.map((t) => t.id));
+    rep.check('roadside decor is trees + bushes only (no rock/cone)',
+      decor.includes('tree') && decor.includes('bush')
+      && !decor.includes('rock') && !decor.includes('cone'),
+      decor.join(','));
 
     const repoHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
     rep.check('shipped import map still points at jsDelivr (three 0.160.0)',
@@ -333,7 +337,7 @@ async function suiteEmpty(browser) {
       && info.scenery.horizon === null && info.scenery.rings.length === 0,
       JSON.stringify(info.scenery));
     rep.check('placeholder planes keep 3:5 / 2:3',
-      Math.abs(info.playerScale[0] - 1.5) < 1e-6 && Math.abs(info.playerScale[1] - 2.5) < 1e-6
+      Math.abs(info.playerScale[0] - 1.8) < 1e-6 && Math.abs(info.playerScale[1] - 3.0) < 1e-6
       && Math.abs(info.teacherScale[0] - 2) < 1e-6 && Math.abs(info.teacherScale[1] - 3) < 1e-6,
       `player ${info.playerScale.join('×')}, teacher ${info.teacherScale.join('×')}`);
 
@@ -527,8 +531,8 @@ async function suiteAspect(browser) {
 
     rep.check('synthetic PNGs override all three slots',
       info.student.user && info.teacher.user && !info.ground.placeholder);
-    rep.check('exact-contract art keeps 1.5×2.5 / 2×3',
-      Math.abs(info.student.scale[0] - 1.5) < 0.01 && Math.abs(info.student.scale[1] - 2.5) < 0.01
+    rep.check('exact-contract art keeps 1.8×3.0 / 2×3',
+      Math.abs(info.student.scale[0] - 1.8) < 0.01 && Math.abs(info.student.scale[1] - 3.0) < 0.01
       && Math.abs(info.teacher.scale[0] - 2) < 0.01 && Math.abs(info.teacher.scale[1] - 3) < 0.01);
     rep.check('ground texture applied with repeat + wrapping (tiles seamlessly)',
       Array.isArray(info.ground.repeat) && info.ground.repeat[0] > 0 && info.ground.repeat[1] > 1
@@ -547,8 +551,8 @@ async function suiteAspect(browser) {
 
   // off-aspect art must be letterboxed, never stretched
   const cases = [
-    { name: 'student 1:1 (600×600)', file: 'assets/textures/student-character.png', bytes: characterPng(600, 600, [0, 128, 255], [255, 255, 0]), expect: [2.5, 2.5], target: 'player' },
-    { name: 'student 3:4 (600×800)', file: 'assets/textures/student-character.png', bytes: characterPng(600, 800, [0, 128, 255], [255, 255, 0]), expect: [1.875, 2.5], target: 'player' },
+    { name: 'student 1:1 (600×600)', file: 'assets/textures/student-character.png', bytes: characterPng(600, 600, [0, 128, 255], [255, 255, 0]), expect: [3.0, 3.0], target: 'player' },
+    { name: 'student 3:4 (600×800)', file: 'assets/textures/student-character.png', bytes: characterPng(600, 800, [0, 128, 255], [255, 255, 0]), expect: [2.25, 3.0], target: 'player' },
     { name: 'teacher 1:1 (900×900)', file: 'assets/textures/teacher-character.png', bytes: characterPng(900, 900, [10, 10, 10], [255, 255, 0]), expect: [3, 3], target: 'teacher' },
     { name: 'teacher 1:2 (600×1200)', file: 'assets/textures/teacher-character.png', bytes: characterPng(600, 1200, [10, 10, 10], [255, 255, 0]), expect: [1.5, 3], target: 'teacher' },
   ];
@@ -594,8 +598,13 @@ async function suiteGameplay(browser) {
       const G = window.__game;
       return {
         gap: G.scenery.horizon.position.z - G.camera.position.z,
-        ringZ: G.scenery.rings.map((r) => +r.group.position.z.toFixed(4)),
-        spacing: G.scenery.rings.map((r) => r.spacing),
+        rings: G.scenery.rings.map((r) => ({
+          z: +r.group.position.z.toFixed(4),
+          spacing: r.spacing,
+          repeat: r.repeat,
+          done: r.done,
+          anyVisible: r.sprites.some((s) => s.visible),
+        })),
       };
     });
     await waitFor(page, (d0) => window.__game.gameState.distance - d0 > 40,
@@ -608,10 +617,12 @@ async function suiteGameplay(browser) {
     rep.check('horizon backdrop stays locked to the camera',
       Math.abs(scn1.gap - scn2.gap) < 0.01 && Math.abs(scn2.gap + 200) < 0.5,
       `gap ${scn1.gap.toFixed(3)} → ${scn2.gap.toFixed(3)} (camera-relative)`);
-    rep.check('landmark rings scroll and wrap inside one spacing',
-      scn2.ringZ.every((z, i) => z >= 0 && z < scn2.spacing[i] + 1e-4)
-      && scn2.ringZ.some((z, i) => z !== scn1.ringZ[i]),
-      `ring z ${scn1.ringZ.join('/')} → ${scn2.ringZ.join('/')} (spacing ${scn2.spacing.join('/')})`);
+    rep.check('gate scrolls past once then hides (one-shot, never recycles)',
+      scn1.rings[0].repeat === false
+      && scn2.rings[0].done === true
+      && scn2.rings[0].anyVisible === false
+      && scn2.rings[0].z < scn2.rings[0].spacing,
+      `repeat=${scn1.rings[0].repeat} done=${scn2.rings[0].done} visible=${scn2.rings[0].anyVisible} z=${scn2.rings[0].z} spacing=${scn2.rings[0].spacing}`);
     const run = await page.evaluate(() => {
       const G = window.__game;
       return {
@@ -700,42 +711,41 @@ async function suiteGameplay(browser) {
       G.startGame(); T.reset();
       out.initial = T.state;
       out.first = T.onPlayerMistake(); out.afterFirst = T.state;
-      out.second = T.onPlayerMistake();
-      out.surgeTarget = T.targetDistance;
-      out.surge = G.config.TEACHER.SURGE_DISTANCE; out.menace = G.config.TEACHER.MENACE_DISTANCE;
-      out.mistakes = T.mistakeCount;
+      out.mistakesAfterFirst = T.mistakeCount;
+      out.second = T.onPlayerMistake(); out.afterSecond = T.state;
       T.reset(); T.onPlayerMistake();
       T.updateRecovery(G.config.TEACHER.RECOVERY_DISTANCE + 1, true);
       out.fading = T.state;
       out.third = T.onPlayerMistake(); out.reappear = T.state;
-      T.mistakeCount = G.config.TEACHER.MAJOR_BLUNDER_THRESHOLD - 1;
-      out.catchResult = T.onPlayerMistake(); out.caught = T.state;
       return out;
     });
     rep.check('teacher appears on the 1st mistake',
-      fsm.initial === 'HIDDEN' && fsm.first === 'ALERT' && fsm.afterFirst === 'CHASING',
+      fsm.initial === 'HIDDEN' && fsm.first === 'ALERT' && fsm.afterFirst === 'CHASING'
+      && fsm.mistakesAfterFirst === 1,
       `${fsm.initial} → ${fsm.afterFirst}`);
-    rep.check('2nd mistake surges closer',
-      fsm.surgeTarget === fsm.surge && fsm.surge < fsm.menace && fsm.mistakes === 2,
-      `target ${fsm.surgeTarget} < menace ${fsm.menace}`);
+    rep.check('2nd mistake = caught (game over)',
+      fsm.second === 'GAME_OVER' && fsm.afterSecond === 'CAUGHT',
+      `2nd mistake → ${fsm.second}/${fsm.afterSecond}`);
     rep.check('re-appears when hit mid-fade-out',
       fsm.fading === 'FADING_OUT' && fsm.third === 'ALERT' && fsm.reappear === 'CHASING');
-    rep.check('3rd mistake = caught', fsm.catchResult === 'GAME_OVER' && fsm.caught === 'CAUGHT');
 
     const clean = await page.evaluate(() => {
       const G = window.__game, T = G.teacher;
       G.startGame(); T.reset(); T.onPlayerMistake();
       T.update(0.05, 20, G.player.laneX, false);
       const seen = [];
-      for (let i = 0; i < 60; i++) { T.updateRecovery(2, true); T.update(0.05, 20, G.player.laneX, false); seen.push(T.state); }
+      for (let i = 0; i < 80; i++) { T.updateRecovery(2, true); T.update(0.05, 20, G.player.laneX, false); seen.push(T.state); }
       return {
         states: [...new Set(seen)],
         faded: T.state === 'FADING_OUT' || T.state === 'HIDDEN',
         recovery: G.config.TEACHER.RECOVERY_DISTANCE,
+        decay: G.config.TEACHER.MISTAKE_DECAY_METERS,
       };
     });
-    rep.check('100 m clean → teacher fades out',
-      clean.faded && clean.recovery === 100, clean.states.join('→'));
+    rep.check('150 m clean → teacher fades out',
+      clean.faded && clean.recovery === 150, clean.states.join('→'));
+    rep.check('mistake decay >= recovery distance (game stays losable)',
+      clean.decay >= clean.recovery, `decay ${clean.decay} >= recovery ${clean.recovery}`);
 
     // --- pause / input / storage -------------------------------------------
     const pause = await page.evaluate(() => {

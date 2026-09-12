@@ -3,7 +3,7 @@
  * (spec §3 + research report §4.4 state machine & fairness guards).
  *
  * States: HIDDEN -> CHASING -> FADING_OUT -> HIDDEN
- *                      \------> CAUGHT (3rd mistake or sustained contact)
+ *                      \------> CAUGHT (2nd mistake or sustained contact)
  *
  * Fairness guards (report §4.4):
  *  - No catch checks during the fade-in grace window.
@@ -231,7 +231,7 @@ export class Teacher {
         this._emit('surge');
     }
 
-    /** Skip straight to the catch (3rd mistake). */
+    /** Skip straight to the catch (2nd mistake). */
     forceCatch() {
         if (this.state === TeacherState.CAUGHT) return;
         this.state = TeacherState.CAUGHT;
@@ -269,7 +269,9 @@ export class Teacher {
         this.cleanMeters += distanceTraveled;
         this.decayMeters += distanceTraveled;
 
-        // forgiveness: -1 mistake per 50 m clean (report §4.4)
+        // forgiveness: -1 mistake per MISTAKE_DECAY_METERS of clean running
+        // (kept == RECOVERY_DISTANCE so decay and recovery fire together — see
+        // CONFIG.TEACHER and the harness coupling assertion)
         if (this.decayMeters >= TEACHER.MISTAKE_DECAY_METERS && this.mistakeCount > 0) {
             this.decayMeters -= TEACHER.MISTAKE_DECAY_METERS;
             this.mistakeCount--;

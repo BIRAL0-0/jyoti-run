@@ -327,6 +327,12 @@ function buildVariantGeometry(typeName, id) {
     }
 
     const geometry = mergeGeometries(parts, false);
+    // Per-type vertical scale (owner review: LOW furniture is 1.5×). The
+    // collision yMin/yMax in CONFIG.OBSTACLES.TYPES must stay in sync with
+    // this — geometry.scale() here is the only thing that actually resizes
+    // the rendered prop.
+    const scaleY = OBSTACLES.HEIGHT_SCALE?.[typeName] ?? 1;
+    if (scaleY !== 1) geometry.scale(1, scaleY, 1);
     variantCache.set(key, geometry);
     return geometry;
 }

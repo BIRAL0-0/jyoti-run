@@ -486,7 +486,9 @@ class SchoolRunnerGame {
             if (paper.tier.grade === 'A+') {
                 this.collectibles.burstAt(
                     paper.group.position.x, paper.group.position.y, paper.group.position.z);
-                this.shake(0.14);
+                // A+ pickup shake is off by default (owner review) — keep the
+                // burst, skip the camera shake unless a value is set.
+                if (GRADES.A_PLUS_SHAKE > 0) this.shake(GRADES.A_PLUS_SHAKE);
             }
         }
 

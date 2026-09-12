@@ -121,10 +121,13 @@ export class SceneryManager {
     _buildRing(cfg, texture) {
         const group = new THREE.Group();
         const { width, height } = this._size(texture, cfg.HEIGHT, cfg.MAX_WIDTH);
+        // REPEAT: false → one-shot landmark: force a single billboard, ignore COUNT.
+        const repeat = cfg.REPEAT !== false;
+        const count = repeat ? cfg.COUNT : 1;
         const segments = Math.max(1, Math.min(cfg.SEGMENTS ?? 1, this.maxSegments));
         const step = cfg.SEGMENT_STEP ?? 0;
         const sprites = [];
-        for (let i = 0; i < cfg.COUNT; i++) {
+        for (let i = 0; i < count; i++) {
             for (let s = 0; s < segments; s++) {
                 const sprite = new THREE.Sprite(this._material(texture, cfg.OPACITY));
                 sprite.scale.set(width, height, 1);
@@ -137,7 +140,7 @@ export class SceneryManager {
             }
         }
         this.scene.add(group);
-        return { group, spacing: cfg.SPACING, sprites };
+        return { group, spacing: cfg.SPACING, phase: cfg.PHASE ?? 0, sprites, repeat, done: false };
     }
 
     // ------------------------------------------------------------------
@@ -158,18 +161,30 @@ export class SceneryManager {
             this.horizon.position.x = camera.position.x * H.PARALLAX;
         }
 
-        // landmark rings: advance with the world, snap back one period
+        // landmark rings: advance with the world, snap back one period.
+        // One-shot landmarks (REPEAT: false) never snap back — they scroll
+        // past the camera once and are hidden so they can't return.
         for (const ring of this.rings) {
+            if (ring.done) continue;
             ring.group.position.z += distance;
-            if (ring.group.position.z >= ring.spacing) {
-                ring.group.position.z -= ring.spacing;
+            if (ring.repeat) {
+                if (ring.group.position.z >= ring.spacing) {
+                    ring.group.position.z -= ring.spacing;
+                }
+            } else if (ring.group.position.z - ring.phase >= camera.position.z) {
+                ring.done = true;
+                for (const s of ring.sprites) s.visible = false;
             }
         }
     }
 
     /** Put every ring back to its start offset (new run). */
     reset() {
-        for (const ring of this.rings) ring.group.position.z = 0;
+        for (const ring of this.rings) {
+            ring.group.position.z = 0;
+            ring.done = false;
+            for (const s of ring.sprites) s.visible = true;
+        }
     }
 
     /** Test/debug surface: what actually got built. */
@@ -186,6 +201,8 @@ export class SceneryManager {
                 h: +r.sprites[0].scale.y.toFixed(3),
                 y: r.sprites[0].position.y,
                 spacing: r.spacing,
+                repeat: r.repeat,
+                done: r.done,
             })),
         };
     }
