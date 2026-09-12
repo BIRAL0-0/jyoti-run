@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>School Runner: Teacher Chase</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏃</text></svg>">
+</head>
+<body>
+    <!-- Three.js Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Loading splash -->
+    <div id="loading-screen" class="overlay-screen">
+        <div class="spinner"></div>
+        <p class="loading-text">Loading…</p>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="screen">
+        <h1 class="game-title">SCHOOL<br>RUNNER</h1>
+        <p class="story-text">“The teacher is coming! <span class="accent">RUN!</span>”</p>
+        <p id="best-line" class="best-line"></p>
+        <button id="start-btn" class="game-btn">START</button>
+        <div class="controls-info">
+            <p><strong>Desktop:</strong> <kbd>←</kbd><kbd>→</kbd> lanes · <kbd>↑</kbd>/<kbd>Space</kbd> jump · <kbd>↓</kbd> slide · <kbd>P</kbd> pause</p>
+            <p><strong>Mobile:</strong> Swipe to move</p>
+        </div>
+        <div class="tier-legend">
+            <span class="grade-chip" style="--chip:#a05a2c">D +10</span>
+            <span class="grade-chip" style="--chip:#FFD700">C +15</span>
+            <span class="grade-chip" style="--chip:#4169E1">B +25</span>
+            <span class="grade-chip" style="--chip:#FF1493">A+ +50</span>
+        </div>
+    </div>
+
+    <!-- Game HUD -->
+    <div id="game-screen" class="screen hud-layer">
+        <div class="hud">
+            <div class="hud-item hud-left">
+                <span class="hud-label">Score</span>
+                <span id="score">0</span>
+            </div>
+            <div class="hud-item hud-center">
+                <span id="grade">Grade C</span>
+            </div>
+            <div class="hud-item hud-right">
+                <span id="distance">0</span><span class="hud-label">m</span>
+            </div>
+        </div>
+        <div id="mistake-pips" class="mistake-pips" aria-label="mistakes">
+            <span class="pip"></span><span class="pip"></span><span class="pip"></span>
+        </div>
+        <div class="corner-buttons">
+            <button id="pause-btn" class="icon-btn" aria-label="Pause">⏸</button>
+            <button id="mute-btn" class="icon-btn" aria-label="Mute">🔊</button>
+        </div>
+        <div id="warning-overlay" class="warning-overlay"></div>
+        <div id="damage-overlay" class="damage-overlay"></div>
+        <div id="popup-layer" class="popup-layer"></div>
+    </div>
+
+    <!-- Pause Screen -->
+    <div id="pause-screen" class="screen dim">
+        <h2 class="pause-title">PAUSED</h2>
+        <p class="pause-hint">Catch your breath… the teacher won't.</p>
+        <button id="resume-btn" class="game-btn">RESUME</button>
+        <p class="pause-hint"><kbd>P</kbd> / <kbd>Esc</kbd> to resume</p>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameover-screen" class="screen">
+        <h1 class="gameover-title">TEACHER<br>CAUGHT YOU!</h1>
+        <span id="best-badge" class="best-badge">🏆 NEW BEST!</span>
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-label">Final Score</span>
+                <span id="final-score" class="stat-value">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Distance</span>
+                <span id="final-distance" class="stat-value">0</span>
+            </div>
+            <div class="stat stat-wide">
+                <span class="stat-label">Grades Collected</span>
+                <span id="final-grades" class="grade-chips"></span>
+            </div>
+        </div>
+        <button id="restart-btn" class="game-btn">Play Again</button>
+    </div>
+
+    <!-- Unsupported fallback -->
+    <div id="unsupported-screen" class="screen">
+        <h2 class="gameover-title">Oh no!</h2>
+        <p class="story-text">This browser can't run the game:</p>
+        <ul id="unsupported-problems" class="unsupported-list"></ul>
+        <p class="controls-info">Please try <strong>Chrome 120+</strong>, <strong>Edge 120+</strong>,
+            <strong>Firefox 120+</strong> or <strong>Safari 17+</strong>.</p>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast" role="status"></div>
+
+    <!-- FPS monitor (CONFIG.DEBUG.SHOW_FPS) -->
+    <pre id="fps-monitor"></pre>
+
+    <!-- Scripts -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module" src="js/main.js"></script>
+    <script>
+        // Fallback for browsers without import-map/module support: if the game
+        // never boots, show a readable message instead of a blank page.
+        setTimeout(function () {
+            if (!window.__gameBooted) {
+                var el = document.getElementById('unsupported-screen');
+                if (el && !document.getElementById('loading-screen').classList.contains('hidden')) {
+                    el.classList.add('active');
+                    document.getElementById('loading-screen').classList.add('hidden');
+                }
+            }
+        }, 5000);
+    </script>
+</body>
+</html>
