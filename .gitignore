@@ -1,0 +1,8 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# optional user-supplied game assets (drop-in overrides, not source-controlled)
+assets/textures/*.png
+assets/sounds/*.mp3
+assets/models/**/*.glb
