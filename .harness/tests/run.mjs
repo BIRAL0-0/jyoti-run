@@ -70,6 +70,17 @@ async function suiteBoot(browser) {
           img: [G.teacher.frames.runA.image.width, G.teacher.frames.runA.image.height],
         },
         ground: G.ground.usesPlaceholderArt,
+        groundTex: (() => {
+          const t = G.ground.tileMesh?.material?.map;
+          if (!t) return null;
+          return {
+            img: [t.image.width, t.image.height],
+            repeat: [t.repeat.x, t.repeat.y],
+            wrapping: t.wrapS === 1000 && t.wrapT === 1000,   // THREE.RepeatWrapping
+          };
+        })(),
+        groundRepeatY: G.config.GROUND.TEXTURE_REPEAT_Y,
+        scenery: G.scenery.describe(),
         drawCalls: G.renderer.info.render.calls,
         triangles: G.renderer.info.render.triangles,
         state: G.gameState.state,
@@ -90,17 +101,15 @@ async function suiteBoot(browser) {
     });
 
     rep.check('boots to START with zero JS errors', g.pageErrors.length === 0, g.pageErrors.join(' | '));
-    // ground-gravel.png is an optional drop-in with no committed file, so its
-    // probe 404s by design (README documents this). Everything else must be clean.
+    // The ground texture is now a committed tile, so there is no optional
+    // probe left: every asset request must resolve and the console is silent.
     const asset404 = g.requests.filter((r) => /assets\//.test(r));
-    const onlyGroundProbe = asset404.length === 0
-      || (asset404.length === 1 && /ground-gravel\.png$/.test(asset404[0]));
     const consoleNoise = g.consoleErrors.filter((e) => !/404/.test(e));
-    rep.check('console clean apart from the documented ground probe',
-      consoleNoise.length === 0 && g.consoleErrors.length - consoleNoise.length <= 1,
-      g.consoleErrors.length ? `${g.consoleErrors.length} expected 404 line(s), 0 others` : 'zero errors');
-    rep.check('every asset request resolves except the optional ground probe',
-      onlyGroundProbe, asset404.join(' | ') || 'none');
+    rep.check('console completely clean (no asset 404s left to document)',
+      consoleNoise.length === 0 && g.consoleErrors.length === 0,
+      g.consoleErrors.length ? `${g.consoleErrors.length} error line(s)` : 'zero errors');
+    rep.check('every asset request resolves',
+      asset404.length === 0, asset404.join(' | ') || 'none');
     rep.check('Howler active with all 6 mp3s', info.howler && info.howls === 6, info.howlKeys.join(','));
     rep.check('student art is the supplied render, 3:5',
       info.student.userArt && info.student.front
@@ -110,7 +119,33 @@ async function suiteBoot(browser) {
       info.teacher.userArt && info.teacher.front
       && Math.abs(info.teacher.scale[0] - 2) < 0.01 && Math.abs(info.teacher.scale[1] - 3) < 0.01,
       `plane ${info.teacher.scale.join('×')}, image ${info.teacher.img.join('×')}, aspect ${info.teacher.aspect.toFixed(3)}`);
-    rep.check('ground-gravel.png still on the procedural fallback (no file yet)', info.ground === true);
+    rep.check('ground uses the committed 1024² gravel tile, not the placeholder',
+      info.ground === false && !!info.groundTex
+      && info.groundTex.img[0] === 1024 && info.groundTex.img[1] === 1024,
+      info.groundTex ? `${info.groundTex.img.join('×')}` : 'no texture');
+    rep.check('gravel tile wraps + repeats through GROUND.TEXTURE_REPEAT_Y',
+      !!info.groundTex && info.groundTex.wrapping
+      && info.groundTex.repeat[0] === 1
+      && info.groundTex.repeat[1] === info.groundRepeatY,
+      info.groundTex ? `repeat ${info.groundTex.repeat.join('×')}, wrapping ${info.groundTex.wrapping}` : 'no texture');
+    rep.check('all three scenery billboards load',
+      info.scenery.usesPlaceholderArt === false
+      && ['horizon', 'gate', 'corridor'].every((k) => info.scenery.loaded.includes(k)),
+      info.scenery.loaded.join(',') || 'none');
+    rep.check('scenery widths follow each image aspect (no stretch)',
+      Math.abs(info.scenery.horizon.w - 74 * (1024 / 1536)) < 0.01
+      && Math.abs(info.scenery.horizon.h - 74) < 0.01
+      && Math.abs(info.scenery.rings[0].w - 18 * 1.5) < 0.01
+      && Math.abs(info.scenery.rings[0].h - 18) < 0.01
+      && Math.abs(info.scenery.rings[1].w - 20 * 1.5) < 0.01
+      && Math.abs(info.scenery.rings[1].h - 20) < 0.01,
+      `horizon ${info.scenery.horizon.w}×${info.scenery.horizon.h}, `
+      + `gate ${info.scenery.rings[0].w}×${info.scenery.rings[0].h}, `
+      + `corridor ${info.scenery.rings[1].w}×${info.scenery.rings[1].h}`);
+    rep.check('landmark rings recycle (2 gates, 2 corridors, 90 m apart)',
+      info.scenery.rings.length === 2
+      && info.scenery.rings.every((r) => r.count === 2 && r.spacing === 90),
+      info.scenery.rings.map((r) => `${r.count}@${r.spacing}m`).join(' '));
     rep.check('draw calls within budget (<=51 at start)', info.drawCalls <= 51, `${info.drawCalls}`);
     rep.check('debug surface complete',
       Object.values(info.debugSurface).every((v) => v === true || v === 'function'));
@@ -180,6 +215,7 @@ async function suiteEmpty(browser) {
         howlerRequested: performance.getEntriesByType('resource').some((r) => /howler/i.test(r.name)),
         studentUserArt: G.player.usesUserArt, teacherUserArt: G.teacher.usesUserArt,
         groundPlaceholder: G.ground.usesPlaceholderArt,
+        scenery: G.scenery.describe(),
         playerScale: [G.player.sprite.scale.x, G.player.sprite.scale.y],
         teacherScale: [G.teacher.sprite.scale.x, G.teacher.sprite.scale.y],
       };
@@ -188,6 +224,10 @@ async function suiteEmpty(browser) {
     rep.check('Howler stays dormant', info.howls === 0 && !info.howlerRequested);
     rep.check('placeholder art for player/teacher/ground',
       !info.studentUserArt && !info.teacherUserArt && info.groundPlaceholder);
+    rep.check('scenery adds nothing with an empty assets/ (zero objects)',
+      info.scenery.usesPlaceholderArt === true && info.scenery.loaded.length === 0
+      && info.scenery.horizon === null && info.scenery.rings.length === 0,
+      JSON.stringify(info.scenery));
     rep.check('placeholder planes keep 3:5 / 2:3',
       Math.abs(info.playerScale[0] - 1.5) < 1e-6 && Math.abs(info.playerScale[1] - 2.5) < 1e-6
       && Math.abs(info.teacherScale[0] - 2) < 1e-6 && Math.abs(info.teacherScale[1] - 3) < 1e-6,
@@ -443,8 +483,31 @@ async function suiteGameplay(browser) {
     // --- live smoke first (later probes deliberately break game state) -----
     await page.evaluate(() => window.__game.startGame());
     const before = await page.evaluate(() => window.__game.gameState.distance);
+
+    // scenery invariants sampled twice: the horizon must stay pinned to the
+    // camera, the landmark rings must keep wrapping inside one spacing.
+    const readScenery = () => page.evaluate(() => {
+      const G = window.__game;
+      return {
+        gap: G.scenery.horizon.position.z - G.camera.position.z,
+        ringZ: G.scenery.rings.map((r) => +r.group.position.z.toFixed(4)),
+        spacing: G.scenery.rings.map((r) => r.spacing),
+      };
+    });
+    await waitFor(page, (d0) => window.__game.gameState.distance - d0 > 40,
+      { timeout: 180000, label: 'distance 40' }, [before]);
+    const scn1 = await readScenery();
+
     await waitFor(page, (d0) => window.__game.gameState.distance - d0 > 120,
       { timeout: 180000, label: 'distance' }, [before]);
+    const scn2 = await readScenery();
+    rep.check('horizon backdrop stays locked to the camera',
+      Math.abs(scn1.gap - scn2.gap) < 0.01 && Math.abs(scn2.gap + 200) < 0.5,
+      `gap ${scn1.gap.toFixed(3)} → ${scn2.gap.toFixed(3)} (camera-relative)`);
+    rep.check('landmark rings scroll and wrap inside one spacing',
+      scn2.ringZ.every((z, i) => z >= 0 && z < scn2.spacing[i] + 1e-4)
+      && scn2.ringZ.some((z, i) => z !== scn1.ringZ[i]),
+      `ring z ${scn1.ringZ.join('/')} → ${scn2.ringZ.join('/')} (spacing ${scn2.spacing.join('/')})`);
     const run = await page.evaluate(() => {
       const G = window.__game;
       return {

@@ -299,6 +299,62 @@ export const CONFIG = {
         CLOUD_Z: -70,
     },
 
+    // ========== SCENERY BILLBOARDS ==========
+    // The scenery renders in assets/scenery/ are drop-in billboards. Every
+    // slot is optional: a missing file (or SCENERY.ENABLED = false) leaves the
+    // procedural world exactly as it was, so an empty assets/ is unaffected.
+    // Widths are DERIVED from each image's own aspect ratio (height is
+    // authoritative), so no scenery art is ever stretched.
+    SCENERY: {
+        ENABLED: true,
+
+        // Distant backdrop, re-anchored to the camera every frame so it never
+        // gets closer (same "infinite distance" trick as a skybox).
+        // fog is disabled on it, otherwise FOG.far would wash it out entirely.
+        HORIZON: {
+            ENABLED: true,
+            URL: 'assets/scenery/school-gate-avenue.png',
+            HEIGHT: 74,               // world units tall
+            MAX_WIDTH: 200,           // clamp for unexpectedly wide art
+            Y: 25,                    // centre height
+            DISTANCE: 200,            // metres ahead of the camera
+            PARALLAX: 0.1,            // lateral drift vs camera x (0 = pinned)
+            OPACITY: 1,
+        },
+
+        // Landmarks the runner passes through. Each entry is a recycling ring:
+        // COUNT billboards spaced SPACING metres apart, looping back once they
+        // pass RECYCLE_BEHIND metres behind the camera. PHASE offsets one ring
+        // against the next so landmarks alternate instead of stacking.
+        RECYCLE_BEHIND: 26,
+        LANDMARKS: [
+            {
+                ID: 'gate',
+                ENABLED: true,
+                URL: 'assets/scenery/school-gate-arch.png',
+                HEIGHT: 18,
+                MAX_WIDTH: 34,
+                Y: 8.6,               // feet of the arch sit just below ground
+                COUNT: 2,
+                SPACING: 90,          // metres between gates
+                PHASE: 0,             // start offset along the track (m)
+                OPACITY: 1,
+            },
+            {
+                ID: 'corridor',
+                ENABLED: true,
+                URL: 'assets/scenery/school-corridor.png',
+                HEIGHT: 20,
+                MAX_WIDTH: 40,
+                Y: 9.8,
+                COUNT: 2,
+                SPACING: 90,
+                PHASE: 45,            // half a period: alternates with the gate
+                OPACITY: 0.96,
+            },
+        ],
+    },
+
     // ========== CAMERA ==========
     CAMERA: {
         FOV: 75,                      // Field of view
@@ -443,6 +499,7 @@ export const OBSTACLES = CONFIG.OBSTACLES;
 export const GRADES = CONFIG.GRADES;
 export const DECOR = CONFIG.DECOR;
 export const SKY = CONFIG.SKY;
+export const SCENERY = CONFIG.SCENERY;
 export const CAMERA = CONFIG.CAMERA;
 export const LIGHTING = CONFIG.LIGHTING;
 export const AUDIO = CONFIG.AUDIO;

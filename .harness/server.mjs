@@ -62,7 +62,7 @@ export function createServer(root, opts = {}) {
     if (overlay[clean]) {
       return send(200, overlay[clean], MIME[path.extname(clean)] || 'application/octet-stream');
     }
-    if (hideAssets && /^assets\/(textures|sounds|models)\//.test(clean)) {
+    if (hideAssets && /^assets\/(textures|sounds|models|scenery)\//.test(clean)) {
       return send(404, 'not found');
     }
 

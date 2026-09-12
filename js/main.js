@@ -19,6 +19,7 @@ import {
     SKY, CAMERA, LIGHTING, PERFORMANCE,
 } from './config.js';
 import { GroundManager } from './managers/GroundManager.js';
+import { SceneryManager } from './managers/SceneryManager.js';
 import { ObstacleManager } from './managers/ObstacleManager.js';
 import { CollectibleManager } from './managers/CollectibleManager.js';
 import { AudioManager } from './managers/AudioManager.js';
@@ -207,6 +208,8 @@ class SchoolRunnerGame {
     setupManagers() {
         this.audio = new AudioManager();
         this.ground = new GroundManager(this.scene, { anisotropy: this.anisotropy });
+        // optional billboard scenery (assets/scenery/) — no-op when absent
+        this.scenery = new SceneryManager(this.scene, { anisotropy: this.anisotropy });
         this.obstacles = new ObstacleManager(this.scene, {
             poolPerVariant: this.obstaclePoolPerVariant,
             shadows: LIGHTING.SHADOWS.enabled,
@@ -257,6 +260,7 @@ class SchoolRunnerGame {
             : null;
 
         this.ground.load(groundTex, this.decorDensity);
+        await this.scenery.load();
         this.player.load(studentTex, studentFrontTex);
         this.teacher.load(teacherTex, teacherFrontTex);
         this.obstacles.init();
@@ -361,6 +365,7 @@ class SchoolRunnerGame {
         this.player.reset();
         this.teacher.reset();
         this.ground.reset();
+        this.scenery.reset();
         this.obstacles.reset();
         this.collectibles.reset();
 
@@ -438,6 +443,7 @@ class SchoolRunnerGame {
         const diff = calculateDifficulty(gs.distance, gs.elapsed);
 
         this.ground.update(distance, deltaTime);
+        this.scenery.update(distance, this.camera);
         this.player.update(deltaTime, gs.currentSpeed);
         this.obstacles.update(distance, diff, true);
         this.collectibles.update(deltaTime, distance, gs.distance, diff, true);
@@ -496,6 +502,7 @@ class SchoolRunnerGame {
     updateMenu(deltaTime) {
         const distance = CONFIG.UI.START_SCREEN_SCROLL_SPEED * deltaTime;
         this.ground.update(distance, deltaTime);
+        this.scenery.update(distance, this.camera);
         this.player.update(deltaTime, CONFIG.UI.START_SCREEN_SCROLL_SPEED);
         this.obstacles.update(distance, { spawnChance: 0, t: 0 }, false);
         this.collectibles.update(deltaTime, distance, 0, {}, false);
