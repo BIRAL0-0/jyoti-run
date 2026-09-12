@@ -20,6 +20,7 @@ import {
 } from './config.js';
 import { GroundManager } from './managers/GroundManager.js';
 import { SceneryManager } from './managers/SceneryManager.js';
+import { CampusManager } from './managers/CampusManager.js';
 import { ObstacleManager } from './managers/ObstacleManager.js';
 import { CollectibleManager } from './managers/CollectibleManager.js';
 import { AudioManager } from './managers/AudioManager.js';
@@ -29,7 +30,8 @@ import { Teacher } from './entities/Teacher.js';
 import { InputHandler } from './utils/InputHandler.js';
 import { GameState, STATE } from './utils/GameState.js';
 import { calculateDifficulty } from './utils/Difficulty.js';
-import { probeExisting, loadImageTexture } from './utils/AssetLoader.js';
+import { probeExisting, loadImageTexture, canvasTexture } from './utils/AssetLoader.js';
+import { drawSkyGradient } from './utils/placeholderArt.js';
 
 const TEXTURE_URLS = {
     ground: 'assets/textures/ground-gravel.png',
@@ -128,6 +130,8 @@ class SchoolRunnerGame {
         this.obstaclePoolPerVariant = M.obstaclePoolPerVariant;
         this.paperPool = M.paperPool;
         this.decorDensity = M.decorDensity;
+        this.campusVariants = M.campusBuildingVariants;
+        this.scenerySegments = M.scenerySegments;
         this.anisotropy = M.anisotropy;
         this.pixelRatioCap = PERFORMANCE.MOBILE_PIXEL_RATIO;
         this.antialias = false;
@@ -143,6 +147,8 @@ class SchoolRunnerGame {
         this.paperPool ??= GRADES.POOL_SIZE;
         this.decorDensity ??= 1;
         this.anisotropy ??= PERFORMANCE.DESKTOP_ANISOTROPY;
+        this.campusVariants ??= Infinity;
+        this.scenerySegments ??= Infinity;
         this.pixelRatioCap ??= PERFORMANCE.DESKTOP_PIXEL_RATIO;
         this.antialias ??= window.devicePixelRatio < 2;
 
@@ -158,11 +164,15 @@ class SchoolRunnerGame {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(SKY.COLOR);
+        // gradient skybox (SKY.GRADIENT) with a flat-colour fallback
+        this.scene.background = SKY.GRADIENT.ENABLED
+            ? canvasTexture(drawSkyGradient(SKY.GRADIENT.TOP, SKY.GRADIENT.HORIZON))
+            : new THREE.Color(SKY.COLOR);
 
         if (LIGHTING.FOG.enabled) {
-            // fog matches the sky for a seamless horizon
-            this.scene.fog = new THREE.Fog(SKY.COLOR, LIGHTING.FOG.near, LIGHTING.FOG.far);
+            // fog colour is pinned to the gradient's horizon colour, so the
+            // campus dissolves into the sky instead of into a haze band
+            this.scene.fog = new THREE.Fog(LIGHTING.FOG.color, LIGHTING.FOG.near, LIGHTING.FOG.far);
         }
 
         this.camera = new THREE.PerspectiveCamera(
@@ -209,7 +219,15 @@ class SchoolRunnerGame {
         this.audio = new AudioManager();
         this.ground = new GroundManager(this.scene, { anisotropy: this.anisotropy });
         // optional billboard scenery (assets/scenery/) — no-op when absent
-        this.scenery = new SceneryManager(this.scene, { anisotropy: this.anisotropy });
+        this.scenery = new SceneryManager(this.scene, {
+            anisotropy: this.anisotropy,
+            maxSegments: this.scenerySegments,
+        });
+        // procedural school campus: sidewalk, railings, yellow buildings
+        this.campus = new CampusManager(this.scene, {
+            anisotropy: this.anisotropy,
+            maxBuildingVariants: this.campusVariants,
+        });
         this.obstacles = new ObstacleManager(this.scene, {
             poolPerVariant: this.obstaclePoolPerVariant,
             shadows: LIGHTING.SHADOWS.enabled,
@@ -260,6 +278,7 @@ class SchoolRunnerGame {
             : null;
 
         this.ground.load(groundTex, this.decorDensity);
+        this.campus.load();
         await this.scenery.load();
         this.player.load(studentTex, studentFrontTex);
         this.teacher.load(teacherTex, teacherFrontTex);
@@ -365,6 +384,7 @@ class SchoolRunnerGame {
         this.player.reset();
         this.teacher.reset();
         this.ground.reset();
+        this.campus.reset();
         this.scenery.reset();
         this.obstacles.reset();
         this.collectibles.reset();
@@ -443,6 +463,7 @@ class SchoolRunnerGame {
         const diff = calculateDifficulty(gs.distance, gs.elapsed);
 
         this.ground.update(distance, deltaTime);
+        this.campus.update(distance);
         this.scenery.update(distance, this.camera);
         this.player.update(deltaTime, gs.currentSpeed);
         this.obstacles.update(distance, diff, true);
@@ -502,6 +523,7 @@ class SchoolRunnerGame {
     updateMenu(deltaTime) {
         const distance = CONFIG.UI.START_SCREEN_SCROLL_SPEED * deltaTime;
         this.ground.update(distance, deltaTime);
+        this.campus.update(distance);
         this.scenery.update(distance, this.camera);
         this.player.update(deltaTime, CONFIG.UI.START_SCREEN_SCROLL_SPEED);
         this.obstacles.update(distance, { spawnChance: 0, t: 0 }, false);

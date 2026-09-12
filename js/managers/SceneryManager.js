@@ -33,6 +33,8 @@ export class SceneryManager {
     constructor(scene, opts = {}) {
         this.scene = scene;
         this.anisotropy = opts.anisotropy ?? 4;
+        /** mobile tuning: cap how many billboards make up one landmark */
+        this.maxSegments = opts.maxSegments ?? Infinity;
 
         /** true until at least one scenery texture actually loads */
         this.usesPlaceholderArt = true;
@@ -119,14 +121,20 @@ export class SceneryManager {
     _buildRing(cfg, texture) {
         const group = new THREE.Group();
         const { width, height } = this._size(texture, cfg.HEIGHT, cfg.MAX_WIDTH);
+        const segments = Math.max(1, Math.min(cfg.SEGMENTS ?? 1, this.maxSegments));
+        const step = cfg.SEGMENT_STEP ?? 0;
         const sprites = [];
         for (let i = 0; i < cfg.COUNT; i++) {
-            const sprite = new THREE.Sprite(this._material(texture, cfg.OPACITY));
-            sprite.scale.set(width, height, 1);
-            sprite.position.set(0, cfg.Y, -(cfg.PHASE + i * cfg.SPACING));
-            sprite.frustumCulled = false;
-            group.add(sprite);
-            sprites.push(sprite);
+            for (let s = 0; s < segments; s++) {
+                const sprite = new THREE.Sprite(this._material(texture, cfg.OPACITY));
+                sprite.scale.set(width, height, 1);
+                sprite.position.set(0, cfg.Y, -(cfg.PHASE + i * cfg.SPACING + s * step));
+                // depth-sort the arches of a corridor so they stack correctly
+                sprite.renderOrder = segments - s;
+                sprite.frustumCulled = false;
+                group.add(sprite);
+                sprites.push(sprite);
+            }
         }
         this.scene.add(group);
         return { group, spacing: cfg.SPACING, sprites };
