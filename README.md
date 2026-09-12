@@ -71,26 +71,48 @@ npx http-server -p 8000
 
 ## 🎨 Replacing the Placeholder Art
 
-The three custom images are **optional drop-in overrides**. Put them here and
-reload — no code changes needed:
+Every image is an **optional drop-in override**. Put it here and reload — no
+code changes needed:
 
 ```
 assets/textures/
-├── ground-gravel.png       ← seamless ground texture (1024×1024+, tiles 12×10 u)
-├── student-character.png   ← student sprite, transparent background (≥ 512×512)
-└── teacher-character.png   ← teacher sprite, transparent background (≥ 512×512)
+├── ground-gravel.png            ← seamless ground texture (1024×1024+, tiles 12×10 u)
+├── student-character.png        ← student, transparent bg — SHIPPED (3:5)
+├── student-character-front.png  ← student facing the camera — SHIPPED (3:5)
+├── teacher-character.png        ← teacher, transparent bg — SHIPPED (2:3)
+└── teacher-character-front.png  ← teacher facing the camera — SHIPPED (2:3)
 ```
 
-- Character PNGs are rendered as **billboard sprites** with the pivot at the
-  feet. Anything with a transparent background works; a front/back view of
-  your character looks best (you see the student's back, the teacher's front).
-- With a single-image character the run/jump/slide poses are animated with
-  transforms (bob, squash, wobble). With the built-in placeholders each pose
-  is a separately drawn frame.
+- Character PNGs render as **billboard sprites** with the pivot at the feet.
+  Anything with a transparent background works; the runner is seen from behind,
+  so a back view is the natural default frame.
+- The shipped sprites come from the full-size renders in `assets/source-art/`
+  (kept in the repo for re-crops) via
+  `.harness/art/prepare-sprites.sh`, which alpha-trims the figure, scales it to
+  fill the plane height and anchors the feet centre-bottom. The result is an
+  exact-ratio, transparent-background texture — nothing is stretched.
 - On boot the game silently probes for these files; if one is missing it uses
   the procedural version instead. (The probes show as 404s in the DevTools
   console/network tab when the files are absent — that's expected and
-  harmless.)
+  harmless. `ground-gravel.png` is the one optional file with no committed
+  default, so that single 404 is normal.)
+
+**Faking 3D turns.** A `THREE.Sprite` always faces the camera, and three.js
+rebuilds its quad in view space every frame — so **object rotation on a Sprite
+does nothing** (only scale is read from the object matrix, and screen-space
+roll comes from `SpriteMaterial.rotation`). The turn is therefore faked the way
+sprite games have always done it, all config-driven under
+`CONFIG.PLAYER.VIEW_*` / `CONFIG.TEACHER.VIEW_*`:
+
+| Effect | How |
+|---|---|
+| the body pivots as it changes lanes | `scale.x = W · cos(turn)`, turn = `VIEW_TURN` × lane offset |
+| it leans into the turn | `material.rotation = -turn · VIEW_LEAN` |
+| it faces the camera when it truly does | the `*-front.png` render, used for the player's stumble and the teacher's catch pose |
+| it wobbles when it trips | the same material roll (this was silently a no-op before) |
+
+With no `*-front.png` present the sprite simply stays a flat card that leans —
+the placeholder art is unaffected. Collision boxes never change.
 
 **Shipped defaults.** The texture slots above are optional and stay on the
 procedural placeholders until you add files; `assets/sounds/` already ships a
@@ -100,8 +122,8 @@ the shipped files with `!`-exceptions — add a matching `!` line when you want 
 new drop-in file committed.
 
 **Aspect handling.** The sprite planes are 1.5 × 2.5 (student) and 2 × 3
-(teacher) world units. Art whose ratio differs is **letterboxed, never
-stretched**: `CONFIG.PLAYER.FIT_ASPECT` / `CONFIG.TEACHER.FIT_ASPECT` keep the
+(teacher) world units — that is what the collision math assumes. Art whose ratio
+differs is **letterboxed, never stretched**: `CONFIG.PLAYER.FIT_ASPECT` / `CONFIG.TEACHER.FIT_ASPECT` keep the
 plane height authoritative and derive the width from the image's own aspect
 (`MAX_SPRITE_WIDTH` clamps extremes). Set them to `false` in `js/config.js` for
 the original stretch-to-plane behaviour. Collision boxes are unaffected either
@@ -123,6 +145,12 @@ recording — the file names are the contract.
 If `bg-music.mp3` exists, the game lazy-loads **Howler.js 2.2.4** (pinned CDN
 URL) and plays whatever files are present; any missing file falls back to the
 built-in Web-Audio synthesis. No game code needs to change.
+
+### Scenery
+
+`assets/scenery/` holds the supplied school photos (corridor, gate arch, gate
+avenue) for future use — a start-screen backdrop, a menu scene, decals, etc.
+Nothing loads them yet, so they cost nothing at runtime.
 
 ### Adding 3D models (optional, advanced)
 
@@ -223,6 +251,9 @@ Browsers without WebGL or import-map support get a friendly fallback screen.
 │       ├── placeholderArt.js   # ALL procedural art (swappable)
 │       └── AssetLoader.js      # optional-file probes + fallbacks
 ├── assets/                     # shipped sprites/audio + drop-in overrides
+│   ├── source-art/             # full-size renders the sprites were cut from
+│   └── scenery/                # school photos, stored for later
+├── .harness/                   # offline verification rig (dev only, see .harness/README.md)
 ├── scripts/download-assets.sh  # optional CC0 asset fetcher (Phase 1)
 └── research/RESEARCH_REPORT.md # Phase 1 research
 ```

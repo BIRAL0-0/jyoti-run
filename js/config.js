@@ -48,14 +48,19 @@ export const CONFIG = {
         FIT_ASPECT: true,
         MAX_SPRITE_WIDTH: 2.5,
         // Optional FRONT render (assets/textures/student-character-front.png).
-        // When present the sprite yaws into the lane change and swaps to the
-        // front view on the far half of the turn, so the runner reads as a 3D
-        // model pivoting instead of a flat card. Absent -> sway only.
+        // A THREE.Sprite always faces the camera, so a "3D turn" is faked the
+        // way sprite-based games do it: the billboard is foreshortened on X
+        // (scale.x = W·cos(turn)) and rolled in screen space
+        // (SpriteMaterial.rotation), and the optional front render takes over
+        // whenever the body genuinely faces the camera (e.g. a stumble).
+        // Note: sprite.rotation.* has NO effect in three.js for Sprite objects
+        // — the roll must go through the material.
         FRONT_URL: 'assets/textures/student-character-front.png',
-        VIEW_YAW: 0.10,               // radians of yaw per world unit of lane offset
-        VIEW_SWAY: 1,                 // yaw smoothing rate (0 = instant, >1 = snappier)
-        VIEW_FLIP: 0.12,              // |yaw| (rad) at which the front render takes over
-        VIEW_IDLE: 0.05,              // idle sway amplitude while running (rad)
+        VIEW_TURN: 0.10,              // implied turn (rad) per world unit of lane offset
+        VIEW_LEAN: 0.30,              // screen-space roll per radian of implied turn
+        VIEW_SWAY: 1,                 // turn smoothing rate (0 = instant, higher = snappier)
+        VIEW_MIN_SCALE: 0.55,         // clamp for the foreshortening
+        VIEW_STUMBLE_FRONT: true,     // show the front render while stumbling
         JUMP_HEIGHT: 3.5,             // How high player jumps
         JUMP_DURATION: 0.6,           // Seconds in air
         SLIDE_DURATION: 0.8,          // Slide animation time
@@ -92,10 +97,11 @@ export const CONFIG = {
         MAX_SPRITE_WIDTH: 3,
         // Same view handling as the player (see CONFIG.PLAYER.FRONT_URL).
         FRONT_URL: 'assets/textures/teacher-character-front.png',
-        VIEW_YAW: 0.10,
+        VIEW_TURN: 0.10,              // implied turn (rad) per world unit of lane offset
+        VIEW_LEAN: 0.25,
         VIEW_SWAY: 1,
-        VIEW_FLIP: 0.12,
-        VIEW_IDLE: 0.04,
+        VIEW_MIN_SCALE: 0.6,
+        VIEW_CATCH_FRONT: true,       // face the camera for the catch pose
         FADE_DURATION: 0.5,           // Fade in/out animation time
 
         // --- Refined chase behaviour (research report §4.4) ---

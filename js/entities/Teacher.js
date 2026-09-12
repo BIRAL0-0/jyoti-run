@@ -130,7 +130,6 @@ export class Teacher {
         });
         this.sprite = new THREE.Sprite(this.material);
         this.sprite.center.set(0.5, 0);
-        this.sprite.rotation.order = 'YXZ';   // view yaw + catch lean compose cleanly
         this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         this.sprite.position.set(0, 0, this.distanceFromPlayer);
         this.sprite.visible = false;
@@ -152,25 +151,26 @@ export class Teacher {
     // ------------------------------------------------------------------
 
     /**
-     * Same treatment as the player (CONFIG.TEACHER.VIEW_*): she yaws as she
-     * weaves toward the player's lane and shows her front render on the far
-     * half of the turn. No front render -> the sprite stays flat.
+     * Same billboard treatment as the player (CONFIG.TEACHER.VIEW_*): sprite
+     * objects ignore their own rotation in three.js, so the roll goes through
+     * SpriteMaterial.rotation and the turn is foreshortened on X. Her front
+     * render is used for the catch pose, where she faces the camera.
      */
     _updateView(deltaTime) {
+        const laneOffset = this.sprite.position.x;
+        const target = TEACHER.VIEW_TURN * laneOffset;
+        const rate = TEACHER.VIEW_SWAY > 0 ? TEACHER.VIEW_SWAY : 1e6;
+        this.viewYaw += (target - this.viewYaw) * Math.min(1, deltaTime * rate * 6);
+
+        this.material.rotation = -this.viewYaw * TEACHER.VIEW_LEAN;
+
         if (!this.frontTexture) return;
 
-        const laneOffset = this.sprite.position.x;
-        this._viewTimer = (this._viewTimer || 0) + deltaTime;
-        const idle = Math.sin(this._viewTimer * 0.5) * TEACHER.VIEW_IDLE;
-        const target = laneOffset * TEACHER.VIEW_YAW + idle;
+        const catching = TEACHER.VIEW_CATCH_FRONT && this.state === TeacherState.CAUGHT;
+        const shrink = catching ? 1 : Math.max(TEACHER.VIEW_MIN_SCALE, Math.cos(this.viewYaw));
+        this.sprite.scale.x = this.spriteW * (catching ? 1.08 : shrink);
 
-        const rate = TEACHER.VIEW_SWAY > 0 ? TEACHER.VIEW_SWAY : 1e6;
-        const k = Math.min(1, deltaTime * rate * 6);
-        this.viewYaw += (target - this.viewYaw) * k;
-        this.sprite.rotation.y = this.viewYaw;
-
-        const wantFront = this.viewYaw < -TEACHER.VIEW_FLIP;
-        const tex = wantFront ? this.frontTexture : this.frames.runA;
+        const tex = catching ? this.frontTexture : this.frames.runA;
         if (this.material.map !== tex) {
             this.material.map = tex;
             this.material.needsUpdate = true;
@@ -443,7 +443,7 @@ export class Teacher {
         this.distanceFromPlayer = this.spawnDistance;
         this.targetDistance = TEACHER.MENACE_DISTANCE;
         this.viewYaw = 0;
-        this._viewTimer = 0;
+        if (this.material) this.material.rotation = 0;
         if (this.sprite) {
             this.sprite.rotation.y = 0;
             this.sprite.visible = false;

@@ -2,6 +2,9 @@
 .DS_Store
 Thumbs.db
 
+# dev harness deps (installed on demand — see .harness/README.md)
+.harness/node_modules
+
 # optional user-supplied game assets (drop-in overrides)
 # Everything here is ignored by default, EXCEPT the files the project ships
 # with — those are whitelisted below on purpose (see README "Replacing the

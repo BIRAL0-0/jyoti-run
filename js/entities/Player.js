@@ -115,8 +115,6 @@ export class Player {
         });
         this.sprite = new THREE.Sprite(this.material);
         this.sprite.center.set(0.5, 0); // pivot at the feet
-        // yaw-then-tilt order so the stumble roll and the view yaw compose cleanly
-        this.sprite.rotation.order = 'YXZ';
         this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         this.sprite.position.set(this.laneX, 0, 0);
         this.scene.add(this.sprite);
@@ -250,8 +248,8 @@ export class Player {
         // --- stumble wobble + red tint ---
         if (this.isStumbling) {
             const p = this.stumbleTimer / PLAYER.STUMBLE_DURATION;
-            const wobbleAmount = 0.14 * (1 - p);
-            this.sprite.rotation.z = Math.sin(this.stumbleTimer * 15) * wobbleAmount;
+            // the wobble itself is applied by _updateView() through
+            // material.rotation (object rotation is a no-op for THREE.Sprite)
             const tint = Math.max(0, 1 - p * 1.6);
             this.material.color.setRGB(1, 1 - 0.55 * tint, 1 - 0.55 * tint);
         } else if (this.material.color.r !== 1) {
@@ -347,6 +345,7 @@ export class Player {
         this.currentY = this.baseY;
         this._wasAirborne = false;
         this.viewYaw = 0;
+        if (this.material) this.material.rotation = 0;
         if (this.sprite) {
             this.sprite.rotation.z = 0;
             this.sprite.rotation.y = 0;
@@ -371,25 +370,37 @@ export class Player {
     // ------------------------------------------------------------------
 
     /**
-     * Yaw the billboard as the player changes lanes and swap to the front
-     * render on the far half of the turn — the two supplied stills then read
-     * as one 3D body pivoting (CONFIG.PLAYER.VIEW_*). With no front render the
-     * sprite simply stays flat.
+     * Billboard "3D" treatment (see CONFIG.PLAYER.VIEW_*).
+     *
+     * THREE.Sprite quads are rebuilt in view space every frame, so:
+     *   - object rotation is ignored entirely (rotation.z included),
+     *   - object *scale* is honoured (non-uniform OK),
+     *   - screen-space roll comes from SpriteMaterial.rotation.
+     * So the turn is faked with foreshortening + roll, and the optional front
+     * render takes over when the body really faces the camera (a stumble).
      */
     _updateView(deltaTime) {
-        if (!this.frontTexture) return;
-
+        // implied turn angle from the lane offset (0 = centre lane)
         const laneOffset = this.laneX - LANES.POSITIONS[1];
-        const idle = Math.sin(this.runBobTimer * 0.5) * PLAYER.VIEW_IDLE;
-        const target = laneOffset * PLAYER.VIEW_YAW + idle;
-
+        const target = PLAYER.VIEW_TURN * laneOffset;
         const rate = PLAYER.VIEW_SWAY > 0 ? PLAYER.VIEW_SWAY : 1e6;
-        const k = Math.min(1, deltaTime * rate * 6);
-        this.viewYaw += (target - this.viewYaw) * k;
-        this.sprite.rotation.y = this.viewYaw;
+        this.viewYaw += (target - this.viewYaw) * Math.min(1, deltaTime * rate * 6);
 
-        const wantFront = this.viewYaw < -PLAYER.VIEW_FLIP;
-        const tex = wantFront ? this.frontTexture : this.frames.runA;
+        // screen-space roll: lean into the turn + the stumble wobble
+        const wobble = this.isStumbling
+            ? Math.sin(this.stumbleTimer * 15) * 0.14
+                * (1 - this.stumbleTimer / PLAYER.STUMBLE_DURATION)
+            : 0;
+        this.material.rotation = -this.viewYaw * PLAYER.VIEW_LEAN + wobble;
+
+        if (!this.frontTexture) return;   // no front render -> flat card, still rolls
+
+        // foreshorten on X so the body reads as pivoting, not sliding sideways
+        const shrink = Math.max(PLAYER.VIEW_MIN_SCALE, Math.cos(this.viewYaw));
+        this.sprite.scale.x = this.spriteW * shrink;
+
+        const faceCamera = PLAYER.VIEW_STUMBLE_FRONT && this.isStumbling;
+        const tex = faceCamera ? this.frontTexture : this.frames.runA;
         if (this.material.map !== tex) {
             this.material.map = tex;
             this.material.needsUpdate = true;
