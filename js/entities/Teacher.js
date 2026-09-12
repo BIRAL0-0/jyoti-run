@@ -72,6 +72,10 @@ export class Teacher {
         this.sprite = null;
         this.material = null;
         this.frames = null;
+        this.usesUserArt = false;      // true when teacher-character.png loaded
+        this.spriteAspect = TEACHER.SPRITE_WIDTH / TEACHER.SPRITE_HEIGHT;
+        this.spriteW = TEACHER.SPRITE_WIDTH;   // effective (aspect-fitted) width
+        this.spriteH = TEACHER.SPRITE_HEIGHT;  // effective height
         this.shadow = null;
 
         /** Optional event sink: (type: 'appear'|'surge'|'caught') => void */
@@ -86,6 +90,7 @@ export class Teacher {
         if (userTexture) {
             this.frames = { runA: userTexture, runB: userTexture, grab: userTexture };
             this.multiFrame = false;
+            this.usesUserArt = true;
         } else {
             const art = generateTeacherFrames();
             this.frames = {
@@ -94,6 +99,23 @@ export class Teacher {
                 grab: canvasTexture(art.grab, { mipmaps: false }),
             };
             this.multiFrame = true;
+            this.usesUserArt = false;
+        }
+
+        // --- aspect handling (CONFIG.TEACHER.FIT_ASPECT) ---
+        this.spriteH = TEACHER.SPRITE_HEIGHT;
+        this.spriteW = TEACHER.SPRITE_WIDTH;
+        if (TEACHER.FIT_ASPECT && this.usesUserArt) {
+            const img = this.frames.runA?.image;
+            const iw = img?.width || 0;
+            const ih = img?.height || 0;
+            if (iw > 0 && ih > 0) {
+                this.spriteAspect = iw / ih;
+                this.spriteW = Math.min(
+                    this.spriteH * this.spriteAspect, TEACHER.MAX_SPRITE_WIDTH);
+            }
+        } else {
+            this.spriteAspect = TEACHER.SPRITE_WIDTH / TEACHER.SPRITE_HEIGHT;
         }
 
         this.material = new THREE.SpriteMaterial({
@@ -104,14 +126,14 @@ export class Teacher {
         });
         this.sprite = new THREE.Sprite(this.material);
         this.sprite.center.set(0.5, 0);
-        this.sprite.scale.set(TEACHER.SPRITE_WIDTH, TEACHER.SPRITE_HEIGHT, 1);
+        this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         this.sprite.position.set(0, 0, this.distanceFromPlayer);
         this.sprite.visible = false;
         this.scene.add(this.sprite);
 
         const shadowTex = canvasTexture(drawShadowBlob(), { mipmaps: false });
         this.shadow = new THREE.Mesh(
-            new THREE.PlaneGeometry(TEACHER.SPRITE_WIDTH * 1.1, TEACHER.SPRITE_WIDTH * 1.1),
+            new THREE.PlaneGeometry(this.spriteW * 1.1, this.spriteW * 1.1),
             new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, opacity: 0 })
         );
         this.shadow.rotation.x = -Math.PI / 2;
@@ -330,8 +352,7 @@ export class Teacher {
                 this.material.needsUpdate = true;
             }
             this.sprite.position.y = 0;
-            this.sprite.scale.set(
-                TEACHER.SPRITE_WIDTH * 1.08, TEACHER.SPRITE_HEIGHT * 1.08, 1);
+            this.sprite.scale.set(this.spriteW * 1.08, this.spriteH * 1.08, 1);
         }
 
         this.shadow.position.x = this.sprite.position.x;
@@ -387,7 +408,7 @@ export class Teacher {
         if (this.sprite) {
             this.sprite.visible = false;
             this.sprite.position.set(0, 0, this.spawnDistance);
-            this.sprite.scale.set(TEACHER.SPRITE_WIDTH, TEACHER.SPRITE_HEIGHT, 1);
+            this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         }
         if (this.material) this.material.opacity = 0;
         if (this.shadow) {

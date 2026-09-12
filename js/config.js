@@ -40,7 +40,13 @@ export const CONFIG = {
     // ========== PLAYER CHARACTER ==========
     PLAYER: {
         SPRITE_HEIGHT: 2.5,           // Sprite scale height
-        SPRITE_WIDTH: 1.5,            // Sprite scale width
+        SPRITE_WIDTH: 1.5,            // Sprite scale width (placeholder/fallback)
+        // User PNGs rarely match 3:5 exactly. When FIT_ASPECT is true and a
+        // student-character.png is present, SPRITE_HEIGHT stays authoritative
+        // and the width is derived from the image's own aspect ratio, so the
+        // art is never stretched. MAX_SPRITE_WIDTH clamps absurdly wide art.
+        FIT_ASPECT: true,
+        MAX_SPRITE_WIDTH: 2.5,
         JUMP_HEIGHT: 3.5,             // How high player jumps
         JUMP_DURATION: 0.6,           // Seconds in air
         SLIDE_DURATION: 0.8,          // Slide animation time
@@ -71,7 +77,10 @@ export const CONFIG = {
         MINOR_BLUNDER_THRESHOLD: 1,   // Mistakes needed to trigger appearance
         MAJOR_BLUNDER_THRESHOLD: 3,   // Instant game over threshold
         SPRITE_HEIGHT: 3,             // Teacher sprite size
-        SPRITE_WIDTH: 2,
+        SPRITE_WIDTH: 2,              // Teacher sprite width (placeholder/fallback)
+        // Same aspect handling as the player (see CONFIG.PLAYER.FIT_ASPECT).
+        FIT_ASPECT: true,
+        MAX_SPRITE_WIDTH: 3,
         FADE_DURATION: 0.5,           // Fade in/out animation time
 
         // --- Refined chase behaviour (research report §4.4) ---

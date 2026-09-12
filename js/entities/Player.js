@@ -46,6 +46,10 @@ export class Player {
         this.material = null;
         this.frames = null;            // {runA, runB, jump, slide} textures
         this.multiFrame = false;       // false when a single user PNG is used
+        this.usesUserArt = false;      // true when student-character.png loaded
+        this.spriteAspect = PLAYER.SPRITE_WIDTH / PLAYER.SPRITE_HEIGHT;
+        this.spriteW = PLAYER.SPRITE_WIDTH;   // effective (aspect-fitted) width
+        this.spriteH = PLAYER.SPRITE_HEIGHT;  // effective height
         this.shadow = null;
 
         // dust particle pool (pre-allocated, reused forever)
@@ -68,6 +72,7 @@ export class Player {
         if (userTexture) {
             this.frames = { runA: userTexture, runB: userTexture, jump: userTexture, slide: userTexture };
             this.multiFrame = false;
+            this.usesUserArt = true;
         } else {
             const art = generateStudentFrames();
             this.frames = {
@@ -77,6 +82,26 @@ export class Player {
                 slide: canvasTexture(art.slide, { mipmaps: false }),
             };
             this.multiFrame = true;
+            this.usesUserArt = false;
+        }
+
+        // --- aspect handling (CONFIG.PLAYER.FIT_ASPECT) ---
+        // Height stays authoritative; width is derived from the source image so
+        // art with an aspect other than the 3:5 plane is letterboxed instead of
+        // stretched.
+        this.spriteH = PLAYER.SPRITE_HEIGHT;
+        this.spriteW = PLAYER.SPRITE_WIDTH;
+        if (PLAYER.FIT_ASPECT && this.usesUserArt) {
+            const img = this.frames.runA?.image;
+            const iw = img?.width || 0;
+            const ih = img?.height || 0;
+            if (iw > 0 && ih > 0) {
+                this.spriteAspect = iw / ih;
+                this.spriteW = Math.min(
+                    this.spriteH * this.spriteAspect, PLAYER.MAX_SPRITE_WIDTH);
+            }
+        } else {
+            this.spriteAspect = PLAYER.SPRITE_WIDTH / PLAYER.SPRITE_HEIGHT;
         }
 
         this.material = new THREE.SpriteMaterial({
@@ -86,14 +111,14 @@ export class Player {
         });
         this.sprite = new THREE.Sprite(this.material);
         this.sprite.center.set(0.5, 0); // pivot at the feet
-        this.sprite.scale.set(PLAYER.SPRITE_WIDTH, PLAYER.SPRITE_HEIGHT, 1);
+        this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         this.sprite.position.set(this.laneX, 0, 0);
         this.scene.add(this.sprite);
 
         // blob shadow (report §3: fake shadow for sprites)
         const shadowTex = canvasTexture(drawShadowBlob(), { mipmaps: false });
         this.shadow = new THREE.Mesh(
-            new THREE.PlaneGeometry(PLAYER.SPRITE_WIDTH * 1.05, PLAYER.SPRITE_WIDTH * 1.05),
+            new THREE.PlaneGeometry(this.spriteW * 1.05, this.spriteW * 1.05),
             new THREE.MeshBasicMaterial({
                 map: shadowTex, transparent: true, depthWrite: false,
             })
@@ -248,16 +273,16 @@ export class Player {
                 this.material.map = tex;
                 this.material.needsUpdate = true;
             }
-            this.sprite.scale.set(PLAYER.SPRITE_WIDTH, PLAYER.SPRITE_HEIGHT, 1);
+            this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         } else {
             // single user PNG: spec's squash slide for visual differentiation
             if (this.isSliding) {
                 const p = Math.min(1, this.slideTimer / PLAYER.SLIDE_DURATION);
                 const squash = THREE.MathUtils.lerp(
-                    PLAYER.SPRITE_HEIGHT, PLAYER.SLIDE_HEIGHT, Math.sin(p * Math.PI));
+                    this.spriteH, PLAYER.SLIDE_HEIGHT, Math.sin(p * Math.PI));
                 this.sprite.scale.y = squash;
             } else {
-                this.sprite.scale.y = PLAYER.SPRITE_HEIGHT;
+                this.sprite.scale.y = this.spriteH;
             }
         }
 
@@ -315,7 +340,7 @@ export class Player {
         if (this.sprite) {
             this.sprite.rotation.z = 0;
             this.sprite.position.set(this.laneX, 0, 0);
-            this.sprite.scale.set(PLAYER.SPRITE_WIDTH, PLAYER.SPRITE_HEIGHT, 1);
+            this.sprite.scale.set(this.spriteW, this.spriteH, 1);
         }
         if (this.material) this.material.color.setRGB(1, 1, 1);
         for (const d of this.dust) {
