@@ -195,32 +195,38 @@ node audio/make-sounds.mjs --out /tmp/sfx     # audition before overwriting
 
 ### Scenery & the school campus
 
-`assets/scenery/` holds the supplied school renders. All three are wired up as
-billboards by `js/managers/SceneryManager.js`, every number in
-`CONFIG.SCENERY` (delete any file and its slot silently disappears):
+`assets/scenery/` holds optional school renders. **They are OFF by default**
+(`CONFIG.SCENERY.ENABLED = false`): the far end of the road is the procedural
+campus dissolving into the sky-coloured fog under the real gradient sky with a
+few small clouds — nothing at the horizon is an image. Set `ENABLED: true` to
+opt in to the photo billboards wired up by `js/managers/SceneryManager.js`
+(delete any file and its slot silently disappears):
 
 | File | Role | Config |
 |---|---|---|
-| `school-gate-avenue.png` | distant horizon backdrop, locked to the camera so it never gets closer | `SCENERY.HORIZON` |
-| `school-gate-arch.png` | the gate you run **out through** at the start, then every 110 m | `SCENERY.LANDMARKS[0]` |
-| `school-corridor.png` | a 3-arch walkway you run through, then every 150 m | `SCENERY.LANDMARKS[1]` |
+| `school-gate-avenue.png` | distant horizon backdrop, locked to the camera so it never gets closer; its baked sky is keyed out at load so the real sky + clouds show through | `SCENERY.HORIZON` |
+| `school-gate-arch.png` | one-shot gate you run **out through** at the start | `SCENERY.LANDMARKS[0]` |
 
-That gives the flow *school gate → long corridor → endless repeat*. Widths are
+(`school-corridor.png` ships as spare art — no slot references it.) Widths are
 derived from each image's own aspect ratio, so nothing is stretched.
 
 The campus itself (`js/managers/CampusManager.js`, all of `CONFIG.CAMPUS`) is
-procedural and lays the world out as:
+procedural and lays the world out as a school-campus corridor:
 
 ```
-Building | Plants | Fence | Sidewalk | ROAD | Sidewalk | Fence | Plants | Building
-   17m      11.6m    9.6m     6–9m     ±6m
+Building | Veranda+colonnade | trees/planters | Hedge | Border+Railing | ROAD
+  16.6m        13.6–16.6m        12.2/9.9m      8.2m      6–7.1m        ±6m
 ```
 
-Sidewalk, railings and each of the three yellow building blocks are one
-InstancedMesh apiece, and each band recycles by snapping back one period — the
-same trick as the ground tiles — so the street runs forever for ~6 draw calls.
-Buildings stop just past the fog wall on purpose: any further out they'd be
-drawn as flat fog colour while still occluding the horizon backdrop.
+Long continuous 2–3 storey yellow school blocks (maroon trim, open verandas,
+dark railings) butt together module-to-module so each side reads as one
+building running to the horizon; a raised concrete border with a dark metal
+railing hugs the interlocking-paver path and a trimmed hedge runs behind it.
+Every band is one or two InstancedMeshes and recycles by snapping back one
+period — the same trick as the ground tiles — so the street runs forever for
+a handful of draw calls. Buildings stop just past the fog wall on purpose:
+any further out they'd be drawn as flat fog colour while still occluding the
+horizon.
 
 ### Adding 3D models (optional, advanced)
 

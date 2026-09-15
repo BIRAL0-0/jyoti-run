@@ -19,7 +19,7 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { CONFIG, GROUND, DECOR, SKY, CAMPUS } from '../config.js';
+import { GROUND, DECOR, SKY, CAMPUS } from '../config.js';
 import { canvasTexture } from '../utils/AssetLoader.js';
 import { drawGroundTexture, drawCloud } from '../utils/placeholderArt.js';
 
@@ -103,9 +103,10 @@ export class GroundManager {
         const span = GROUND.VISIBLE_TILES * GROUND.TILE_LENGTH + 80;
         const zCentre = -span / 2 + 60;
 
-        // tuck the inner edge under the pavement so no seam can show through
-        const inner = CAMPUS.ENABLED && CAMPUS.SIDEWALK.ENABLED
-            ? CAMPUS.SIDEWALK.INNER_X + CAMPUS.SIDEWALK.WIDTH - 0.2
+        // tuck the inner edge under the raised border so no seam can show;
+        // the planted strip (hedge, planters, trees) and veranda sit on it
+        const inner = CAMPUS.ENABLED && CAMPUS.BORDER.ENABLED
+            ? CAMPUS.BORDER.INNER_X + CAMPUS.BORDER.WIDTH - 0.1
             : GROUND.TILE_WIDTH / 2;
         const width = GROUND.APRON_WIDTH / 2 - inner;
 
@@ -127,40 +128,31 @@ export class GroundManager {
             this.scene.add(lawn);
             this.lawnMesh = lawn;
         }
-
-        // Legacy blue kerb strips. The campus pavement has its own kerb lip,
-        // so these are only built when the sidewalk is switched off — leaving
-        // both on put two solids in the same place (the "glitched" barrier).
-        if (!(CAMPUS.ENABLED && CAMPUS.SIDEWALK.ENABLED)) {
-            const curbGeo = new THREE.BoxGeometry(GROUND.CURB_WIDTH, GROUND.CURB_HEIGHT, span);
-            const curbMat = new THREE.MeshLambertMaterial({ color: CONFIG.OBSTACLES.COLORS.blue });
-            for (const side of [-1, 1]) {
-                const curb = new THREE.Mesh(curbGeo, curbMat);
-                curb.position.set(
-                    side * (GROUND.TILE_WIDTH / 2 + GROUND.CURB_WIDTH / 2),
-                    GROUND.CURB_HEIGHT / 2,
-                    zCentre,
-                );
-                this.scene.add(curb);
-            }
-        }
     }
 
     // ------------------------------------------------------------------
     // Roadside decor lattice (instanced, periodic)
     // ------------------------------------------------------------------
-    _buildDecor(density) {
+    _buildDecor(density = 1) {
         this.decorGroup = new THREE.Group();
         const span = GROUND.VISIBLE_TILES * GROUND.TILE_LENGTH;
-        const slotsPerSide = Math.max(6, Math.floor(span / DECOR.SPACING));
         const slots = [];
 
+        // Organised school landscaping: a regular lattice, mirrored on both
+        // sides — rounded ornamental trees on the outer line, bush planters
+        // on the inner line, staggered half a step for rhythm.
+        const treeN = Math.floor(span / DECOR.TREE_SPACING);
+        const planterN = Math.floor(span / DECOR.PLANTER_SPACING);
         for (let side = -1; side <= 1; side += 2) {
-            for (let i = 0; i < slotsPerSide; i++) {
-                if (Math.random() > density) continue;   // sparse on mobile
-                const z = 8 - i * DECOR.SPACING;
-                const x = side * (DECOR.LANE_OFFSET_MIN + Math.random() * DECOR.LANE_OFFSET_VAR);
-                slots.push(this._makeDecorSlot(x, z));
+            for (let i = 0; i < treeN; i++) {
+                slots.push(this._makeDecorSlot('tree',
+                    side * DECOR.TREE_X, 10 - i * DECOR.TREE_SPACING));
+            }
+            for (let i = 0; i < planterN; i++) {
+                if (Math.random() > density) continue;   // sparser on mobile
+                slots.push(this._makeDecorSlot('bush',
+                    side * DECOR.PLANTER_X,
+                    10 - i * DECOR.PLANTER_SPACING - DECOR.PLANTER_SPACING / 2));
             }
         }
 
@@ -173,6 +165,7 @@ export class GroundManager {
         for (const [type, list] of byType) {
             const { geometry, material } = buildDecorMesh(type);
             const mesh = new THREE.InstancedMesh(geometry, material, list.length);
+            mesh.userData.decorType = type;
             mesh.frustumCulled = false;
             const m = new THREE.Matrix4();
             const q = new THREE.Quaternion();
@@ -191,19 +184,13 @@ export class GroundManager {
         this.scene.add(this.decorGroup);
     }
 
-    _makeDecorSlot(x, z) {
-        // weighted type pick
-        let roll = Math.random(), type = DECOR.TYPES[DECOR.TYPES.length - 1].id;
-        for (const t of DECOR.TYPES) {
-            if (roll < t.weight) { type = t.id; break; }
-            roll -= t.weight;
-        }
+    _makeDecorSlot(type, x, z) {
         return {
             type,
             x,
             z,
-            rotY: Math.random() * Math.PI * 2,
-            scale: DECOR.SCALE_MIN + Math.random() * DECOR.SCALE_VAR,
+            rotY: 0,   // tidy rows face the path
+            scale: 1 + (Math.random() * 2 - 1) * DECOR.SCALE_VAR,
         };
     }
 
@@ -218,9 +205,10 @@ export class GroundManager {
                 transparent: true,
                 depthWrite: false,
                 fog: false,
-                opacity: 0.9,
+                opacity: 0.85,
             }));
-            const w = 10 + Math.random() * 14;
+            const w = SKY.CLOUD_SIZE_MIN
+                + Math.random() * (SKY.CLOUD_SIZE_MAX - SKY.CLOUD_SIZE_MIN);
             sprite.scale.set(w, w * 0.6, 1);
             sprite.position.set(
                 (Math.random() - 0.5) * SKY.CLOUD_SPREAD_X * 2,
@@ -248,10 +236,10 @@ export class GroundManager {
             this.tileGroup.position.z -= GROUND.TILE_LENGTH;
         }
 
-        // decor lattice: same trick with its own period
+        // decor lattice: same trick with its own period (both spacings divide it)
         this.decorGroup.position.z += distance;
-        if (this.decorGroup.position.z >= DECOR.SPACING) {
-            this.decorGroup.position.z -= DECOR.SPACING;
+        if (this.decorGroup.position.z >= DECOR.PERIOD) {
+            this.decorGroup.position.z -= DECOR.PERIOD;
         }
 
         // lazy cloud drift
@@ -305,6 +293,12 @@ function cCyl(rt, rb, h, seg, x, y, z, hex) {
     return g;
 }
 
+function cSph(r, x, y, z, hex) {
+    const g = coloredGeometry(new THREE.SphereGeometry(r, 8, 6), hex);
+    g.translate(x, y, z);
+    return g;
+}
+
 function mergedDecor(id, parts) {
     const material = new THREE.MeshLambertMaterial({ vertexColors: true });
     const geometry = mergeGeometries(parts, false);
@@ -316,26 +310,19 @@ function buildDecorMesh(type) {
     const C = DECOR.COLORS;
     let built;
     if (type === 'tree') {
+        // rounded ornamental tree: short trunk + puffy layered canopy
         built = mergedDecor(type, [
-            cCyl(0.16, 0.22, 1.6, 5, 0, 0.8, 0, C.trunk),
-            cCone(1.15, 1.7, 7, 0, 2.3, 0, C.leaf1),
-            cCone(0.85, 1.4, 7, 0, 3.2, 0, C.leaf2),
+            cCyl(0.12, 0.18, 1.3, 6, 0, 0.65, 0, C.trunk),
+            cSph(1.05, 0, 1.9, 0, C.leaf1),
+            cSph(0.75, 0.45, 2.35, 0.2, C.leaf2),
+            cSph(0.6, -0.5, 2.3, -0.15, C.leaf2),
         ]);
-    } else if (type === 'bush') {
+    } else { // bush in a raised concrete planter
         built = mergedDecor(type, [
-            cBox(0.9, 0.65, 0.9, 0, 0.33, 0, C.bush),
-            cBox(0.55, 0.45, 0.55, 0.3, 0.75, 0.15, C.leaf2),
-        ]);
-    } else if (type === 'rock') {
-        built = mergedDecor(type, [
-            cBox(0.85, 0.55, 0.7, 0, 0.28, 0, C.rock),
-            cBox(0.45, 0.35, 0.45, 0.25, 0.65, -0.1, C.rockD),
-        ]);
-    } else { // cone
-        built = mergedDecor(type, [
-            cBox(0.72, 0.08, 0.72, 0, 0.04, 0, C.coneW),
-            cCone(0.3, 0.85, 8, 0, 0.5, 0, C.cone),
-            cBox(0.46, 0.1, 0.46, 0, 0.5, 0, C.coneW),
+            cBox(1.1, 0.45, 1.1, 0, 0.225, 0, C.planter),
+            cBox(1.22, 0.09, 1.22, 0, 0.49, 0, C.planterD),
+            cSph(0.55, 0, 0.95, 0, C.bush),
+            cSph(0.38, 0.25, 1.15, 0.1, C.leaf2),
         ]);
     }
     decorCache.set(type, built);

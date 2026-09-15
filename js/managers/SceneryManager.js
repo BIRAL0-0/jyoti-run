@@ -106,8 +106,56 @@ export class SceneryManager {
         return { width, height: h };
     }
 
+    /**
+     * The horizon render has its own sky + clouds baked in; left opaque, the
+     * sprite reads as a pasted card with hard rectangle edges. Key the sky-ish
+     * pixels (cool blues, cool whites) transparent above the skyline so the
+     * scene's real gradient sky and drifting clouds continue behind the gate.
+     * Warm whites (sunlit marble) and yellows (buildings) fail both tests and
+     * are kept. Returns a new CanvasTexture and disposes the input.
+     * @param {THREE.Texture} texture
+     * @returns {THREE.Texture}
+     */
+    _keyOutSky(texture) {
+        const K = SCENERY.HORIZON.SKY_KEY;
+        const img = texture.image;
+        if (!K || !K.ENABLED || !img || !img.width || !img.height) return texture;
+        const w = img.width, h = img.height;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0);
+        const frame = ctx.getImageData(0, 0, w, h);
+        const px = frame.data;
+        const skyline = h * K.SKYLINE;
+        const feather = h * (K.FEATHER ?? 0.12);
+        for (let y = 0; y < skyline; y++) {
+            // full strength above the feather band, easing to 0 at SKYLINE so
+            // the keying lands softly instead of ending in a hard row
+            const strength = y < skyline - feather ? 1 : (skyline - y) / feather;
+            if (strength <= 0) continue;
+            const cut = 255 * (1 - strength);
+            let i = y * w * 4;
+            for (let x = 0; x < w; x++, i += 4) {
+                const r = px[i], g = px[i + 1], b = px[i + 2];
+                const blueSky = b > 120 && b >= r + 40;          // saturated sky blue
+                const coolWhite = r > 185 && g > 185 && b > 190 && b >= r; // cloud/haze
+                if (blueSky || coolWhite) px[i + 3] = Math.min(px[i + 3], cut);
+            }
+        }
+        ctx.putImageData(frame, 0, 0);
+        const keyed = new THREE.CanvasTexture(canvas);
+        keyed.colorSpace = THREE.SRGBColorSpace;
+        keyed.anisotropy = texture.anisotropy || this.anisotropy;
+        keyed.needsUpdate = true;
+        texture.dispose();
+        return keyed;
+    }
+
     _buildHorizon(texture) {
         const H = SCENERY.HORIZON;
+        texture = this._keyOutSky(texture);
         const { width, height } = this._size(texture, H.HEIGHT, H.MAX_WIDTH);
         const sprite = new THREE.Sprite(this._material(texture, H.OPACITY));
         sprite.scale.set(width, height, 1);
