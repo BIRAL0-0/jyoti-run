@@ -84,10 +84,11 @@ async function suiteBoot(browser) {
         campus: G.campus.describe(),
         crossSection: {
           roadEdge: G.config.GROUND.TILE_WIDTH / 2,
-          sidewalkInner: G.config.CAMPUS.SIDEWALK.INNER_X,
-          sidewalkOuter: G.config.CAMPUS.SIDEWALK.INNER_X + G.config.CAMPUS.SIDEWALK.WIDTH,
-          fence: G.config.CAMPUS.FENCE.X,
-          plants: G.config.DECOR.LANE_OFFSET_MIN,
+          borderInner: G.config.CAMPUS.BORDER.INNER_X,
+          borderOuter: G.config.CAMPUS.BORDER.INNER_X + G.config.CAMPUS.BORDER.WIDTH,
+          hedge: G.config.CAMPUS.HEDGE.X,
+          verandaInner: G.config.CAMPUS.VERANDA.INNER_X,
+          verandaOuter: G.config.CAMPUS.VERANDA.INNER_X + G.config.CAMPUS.VERANDA.WIDTH,
           buildingInner: G.config.CAMPUS.BUILDINGS.INNER_X,
         },
         // fraction of screen height the character occupies (owner review #7)
@@ -146,8 +147,10 @@ async function suiteBoot(browser) {
           return {
             road: measure(G.ground.tileMesh),
             lawn: measure(G.ground.lawnMesh),
-            sidewalk: band('sidewalk'),
-            fence: band('fence'),
+            border: band('border'),
+            railing: band('railing'),
+            hedge: band('hedge'),
+            veranda: band('veranda'),
             buildings: G.campus.bands
               .filter((b) => b.id.startsWith('building:'))
               .map((b) => measure(b.group.children[0])),
@@ -201,46 +204,42 @@ async function suiteBoot(browser) {
       && info.groundTex.repeat[0] === 1
       && info.groundTex.repeat[1] === info.groundRepeatY,
       info.groundTex ? `repeat ${info.groundTex.repeat.join('×')}, wrapping ${info.groundTex.wrapping}` : 'no texture');
-    rep.check('scenery billboards load (horizon + one-shot gate)',
-      info.scenery.usesPlaceholderArt === false
-      && ['horizon', 'gate'].every((k) => info.scenery.loaded.includes(k))
-      && !info.scenery.loaded.includes('corridor'),
-      info.scenery.loaded.join(',') || 'none');
-    rep.check('scenery widths follow each image aspect (no stretch)',
-      Math.abs(info.scenery.horizon.w - 74 * (1024 / 1536)) < 0.01
-      && Math.abs(info.scenery.horizon.h - 74) < 0.01
-      && Math.abs(info.scenery.rings[0].w - 18 * 1.5) < 0.01
-      && Math.abs(info.scenery.rings[0].h - 18) < 0.01,
-      `horizon ${info.scenery.horizon.w}×${info.scenery.horizon.h}, `
-      + `gate ${info.scenery.rings[0].w}×${info.scenery.rings[0].h}`);
-    rep.check('gate is a one-shot (REPEAT false, single billboard)',
-      info.scenery.rings.length === 1
-      && info.scenery.rings[0].count === 1
-      && info.scenery.rings[0].repeat === false,
-      info.scenery.rings.map((r) => `${r.count}@${r.spacing}m repeat=${r.repeat}`).join(' '));
-    rep.check('campus bands built: sidewalk + fence + 3 building variants',
+    // Owner review: the photo billboards at the far end read as a pasted,
+    // duplicated scene (miniature gate + baked sky). They are opt-in now, so
+    // the shipped default must keep the horizon fully procedural.
+    rep.check('far end stays procedural (photo scenery off by default)',
+      info.scenery.usesPlaceholderArt === true
+      && info.scenery.loaded.length === 0
+      && info.scenery.horizon === null
+      && info.scenery.rings.length === 0,
+      JSON.stringify(info.scenery));
+    rep.check('campus bands built: border + railing + hedge + veranda + colonnade + 2 school blocks',
       info.campus.enabled
-      && info.campus.bands.some((b) => b.id === 'sidewalk')
-      && info.campus.bands.some((b) => b.id === 'fence')
-      && info.campus.bands.filter((b) => b.id.startsWith('building:')).length === 3,
+      && ['border', 'railing', 'hedge', 'veranda', 'colonnade']
+        .every((id) => info.campus.bands.some((b) => b.id === id))
+      && info.campus.bands.filter((b) => b.id.startsWith('building:')).length === 2,
       info.campus.bands.map((b) => b.id).join(' '));
-    rep.check('cross-section order Building|Plants|Fence|Sidewalk|ROAD holds',
-      info.crossSection.roadEdge <= info.crossSection.sidewalkInner
-      && info.crossSection.sidewalkOuter <= info.crossSection.fence
-      && info.crossSection.fence < info.crossSection.plants
-      && info.crossSection.plants < info.crossSection.buildingInner,
-      `road ${info.crossSection.roadEdge} | sidewalk ${info.crossSection.sidewalkInner}-${info.crossSection.sidewalkOuter} | fence ${info.crossSection.fence} | plants ${info.crossSection.plants} | building ${info.crossSection.buildingInner}`);
+    rep.check('cross-section order ROAD|Border|Hedge|Veranda|Building holds',
+      info.crossSection.roadEdge <= info.crossSection.borderInner
+      && info.crossSection.borderOuter <= info.crossSection.hedge
+      && info.crossSection.hedge < info.crossSection.verandaInner
+      && info.crossSection.verandaOuter <= info.crossSection.buildingInner,
+      `road ${info.crossSection.roadEdge} | border ${info.crossSection.borderInner}-${info.crossSection.borderOuter} | hedge ${info.crossSection.hedge} | veranda ${info.crossSection.verandaInner}-${info.crossSection.verandaOuter} | building ${info.crossSection.buildingInner}`);
     // Owner review: "fences/grass/structures spawn below the ground level".
     // Every scenery band must have its LOWEST point at (or just fractionally
     // under) y = 0, i.e. flush with the road surface.
     const ga = info.groundAlignment;
-    const bands = [ga.lawn, ga.sidewalk, ga.fence, ...ga.buildings, ...ga.decor].filter(Boolean);
+    const bands = [ga.lawn, ga.border, ga.hedge, ga.veranda, ...ga.buildings, ...ga.decor]
+      .filter(Boolean);
     rep.check('every scenery instance sits on the ground plane (nothing buried)',
-      bands.length >= 5 && bands.every((b) => b.minY >= -0.05 && b.minY <= 0.05),
+      bands.length >= 6 && bands.every((b) => b.minY >= -0.05 && b.minY <= 0.05),
       `${bands.length} bands, lowest minY ${Math.min(...bands.map((b) => b.minY))}`);
+    rep.check('railing stands on the raised border (stacked, not buried)',
+      !!ga.railing && ga.railing.minY >= 0.45 && ga.railing.minY <= 0.55,
+      ga.railing ? `railing minY ${ga.railing.minY} on border` : 'no railing');
     rep.check('no scenery instance overlaps the road surface',
-      bands.every((b) => b.overlapRoad === 0),
-      `${bands.reduce((a, b) => a + b.overlapRoad, 0)} intruding instances across ${bands.length} bands`);
+      [...bands, ga.railing].filter(Boolean).every((b) => b.overlapRoad === 0),
+      `${[...bands, ga.railing].filter(Boolean).reduce((a, b) => a + b.overlapRoad, 0)} intruding instances across ${bands.length + 1} bands`);
     rep.check('road and lawn are flush at y = 0 (no coplanar z-fighting)',
       Math.abs(ga.road.minY) < 0.001 && Math.abs(ga.lawn.minY) < 0.001
       && ga.lawn.clearGap >= ga.road.outerX - 0.001,
@@ -258,10 +257,10 @@ async function suiteBoot(browser) {
     rep.check('tuning contract values unchanged',
       info.configKeys.speed.join() === '15,45,0.5' && info.configKeys.spawn.join() === '0.25,0.65');
 
-    const decor = await g.page.evaluate(() => window.__game.config.DECOR.TYPES.map((t) => t.id));
-    rep.check('roadside decor is trees + bushes only (no rock/cone)',
-      decor.includes('tree') && decor.includes('bush')
-      && !decor.includes('rock') && !decor.includes('cone'),
+    const decor = await g.page.evaluate(() =>
+      window.__game.ground.decorGroup.children.map((c) => c.userData.decorType));
+    rep.check('landscaping is rounded trees + bush planters only',
+      decor.length === 2 && decor.includes('tree') && decor.includes('bush'),
       decor.join(','));
 
     const repoHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
@@ -592,19 +591,14 @@ async function suiteGameplay(browser) {
     await page.evaluate(() => window.__game.startGame());
     const before = await page.evaluate(() => window.__game.gameState.distance);
 
-    // scenery invariants sampled twice: the horizon must stay pinned to the
-    // camera, the landmark rings must keep wrapping inside one spacing.
+    // far-end invariants sampled twice: the horizon must stay fully
+    // procedural during play — no photo billboards, ever.
     const readScenery = () => page.evaluate(() => {
       const G = window.__game;
       return {
-        gap: G.scenery.horizon.position.z - G.camera.position.z,
-        rings: G.scenery.rings.map((r) => ({
-          z: +r.group.position.z.toFixed(4),
-          spacing: r.spacing,
-          repeat: r.repeat,
-          done: r.done,
-          anyVisible: r.sprites.some((s) => s.visible),
-        })),
+        horizonNull: G.scenery.horizon === null,
+        rings: G.scenery.rings.length,
+        loaded: G.scenery.loadedIds.length,
       };
     });
     await waitFor(page, (d0) => window.__game.gameState.distance - d0 > 40,
@@ -614,15 +608,10 @@ async function suiteGameplay(browser) {
     await waitFor(page, (d0) => window.__game.gameState.distance - d0 > 120,
       { timeout: 180000, label: 'distance' }, [before]);
     const scn2 = await readScenery();
-    rep.check('horizon backdrop stays locked to the camera',
-      Math.abs(scn1.gap - scn2.gap) < 0.01 && Math.abs(scn2.gap + 200) < 0.5,
-      `gap ${scn1.gap.toFixed(3)} → ${scn2.gap.toFixed(3)} (camera-relative)`);
-    rep.check('gate scrolls past once then hides (one-shot, never recycles)',
-      scn1.rings[0].repeat === false
-      && scn2.rings[0].done === true
-      && scn2.rings[0].anyVisible === false
-      && scn2.rings[0].z < scn2.rings[0].spacing,
-      `repeat=${scn1.rings[0].repeat} done=${scn2.rings[0].done} visible=${scn2.rings[0].anyVisible} z=${scn2.rings[0].z} spacing=${scn2.rings[0].spacing}`);
+    rep.check('no photo billboards at the far end during play',
+      scn1.horizonNull && scn1.rings === 0 && scn1.loaded === 0
+      && scn2.horizonNull && scn2.rings === 0 && scn2.loaded === 0,
+      `@40m ${JSON.stringify(scn1)} @120m ${JSON.stringify(scn2)}`);
     const run = await page.evaluate(() => {
       const G = window.__game;
       return {

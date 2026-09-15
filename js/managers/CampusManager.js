@@ -1,17 +1,16 @@
 /**
  * CampusManager — the school around the track.
  *
- * Cross-section, from the centre of the road outwards (owner review item 2):
+ * Cross-section, from the centre of the road outwards (school-campus pass):
  *
- *   Building | Plants | Fence | Sidewalk | ROAD | Sidewalk | Fence | Plants | Building
+ *   ROAD | BORDER(+RAILING) | HEDGE | planters/trees | VERANDA | BUILDINGS
  *
- * Uses the same recycling trick as GroundManager: each band lives in a Group
- * whose z advances with the world and snaps back by exactly one period, so a
- * short lattice covers an infinite run with zero per-frame matrix updates.
- *
- * Everything is procedural (canvas facades + merged primitives) and every
- * number comes from CONFIG.CAMPUS. Buildings are one InstancedMesh per
- * variant, so the whole campus is a handful of draw calls however far it runs.
+ * Long continuous 2-3 storey yellow school blocks with maroon trim, open
+ * ground-floor verandas (3D colonnade) and dark metal railings; a raised
+ * concrete border + railing hugs the path and a trimmed hedge runs behind
+ * it. Everything is periodic and recycled with the same group-shift trick as
+ * the ground tiles, and every band is one or two InstancedMeshes, so the
+ * whole campus is a handful of draw calls however far it runs.
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -24,9 +23,8 @@ import { drawPavingTexture, drawBuildingFacade } from '../utils/placeholderArt.j
  *
  * Capped just past the fog wall on purpose: a building further away than
  * FOG.far is drawn as flat fog colour, and because it still writes depth it
- * would occlude the horizon backdrop (which is exempt from fog) with an
- * invisible sky-coloured wall. Stopping the lattice a little beyond the fog
- * keeps the backdrop visible without any visible end to the street.
+ * would occlude any fog-exempt backdrop with an invisible sky-coloured wall.
+ * Stopping the lattice a little beyond the fog keeps the horizon seamless.
  */
 function campusSpan() {
     const track = GROUND.VISIBLE_TILES * GROUND.TILE_LENGTH;
@@ -42,7 +40,7 @@ export class CampusManager {
     constructor(scene, opts = {}) {
         this.scene = scene;
         this.anisotropy = opts.anisotropy ?? 4;
-        /** mobile tuning: drop the tallest variants (1 draw call each) */
+        /** mobile tuning: drop the extra variants (1 draw call each) */
         this.maxBuildingVariants = opts.maxBuildingVariants ?? Infinity;
 
         /** @type {{group:THREE.Group, period:number, id:string}[]} */
@@ -56,9 +54,14 @@ export class CampusManager {
 
     load() {
         if (!CAMPUS.ENABLED) return;
-        if (CAMPUS.SIDEWALK.ENABLED) this._buildSidewalk();
-        if (CAMPUS.FENCE.ENABLED) this._buildFence();
-        if (CAMPUS.BUILDINGS.ENABLED) this._buildBuildings();
+        if (CAMPUS.BORDER.ENABLED) this._buildBorder();
+        if (CAMPUS.RAILING.ENABLED) this._buildRailing();
+        if (CAMPUS.HEDGE.ENABLED) this._buildHedge();
+        if (CAMPUS.VERANDA.ENABLED) this._buildVeranda();
+        if (CAMPUS.BUILDINGS.ENABLED) {
+            this._buildColonnade();
+            this._buildBuildings();
+        }
         this.enabled = this.bands.length > 0;
     }
 
@@ -74,12 +77,108 @@ export class CampusManager {
         return geo;
     }
 
+    /** Raised concrete border hugging the path edge (body + darker lip). */
+    _buildBorder() {
+        const B = CAMPUS.BORDER;
+        const span = campusSpan();
+
+        const body = CampusManager._tinted(
+            new THREE.BoxGeometry(B.WIDTH, B.HEIGHT, span), B.COLOR);
+        body.translate(0, B.HEIGHT / 2, 0);
+        const lip = CampusManager._tinted(
+            new THREE.BoxGeometry(B.WIDTH + 0.12, 0.09, span), B.LIP_COLOR);
+        lip.translate(0, B.HEIGHT + 0.045, 0);
+
+        const mesh = new THREE.InstancedMesh(
+            mergeGeometries([body, lip], false),
+            new THREE.MeshLambertMaterial({ vertexColors: true }),
+            2,
+        );
+        mesh.frustumCulled = false;
+        const m = new THREE.Matrix4();
+        [-1, 1].forEach((side, i) => {
+            m.makeTranslation(side * (B.INNER_X + B.WIDTH / 2), 0, -span / 2 + 80);
+            mesh.setMatrixAt(i, m);
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+
+        const group = new THREE.Group();
+        group.add(mesh);
+        this.scene.add(group);
+        this.bands.push({ group, period: Infinity, id: 'border' });   // static
+    }
+
+    /** Dark metal railing standing on the border: post + two rails. */
+    _buildRailing() {
+        const R = CAMPUS.RAILING;
+        const span = campusSpan();
+        const panels = Math.floor(span / R.PANEL_SPACING);
+
+        const parts = [
+            CampusManager._tinted(
+                new THREE.BoxGeometry(R.POST_WIDTH, R.POST_HEIGHT, R.POST_WIDTH),
+                R.POST_COLOR),
+        ];
+        parts[0].translate(0, R.POST_HEIGHT / 2, 0);
+        for (const y of R.RAIL_Y) {
+            const rail = CampusManager._tinted(
+                new THREE.BoxGeometry(R.POST_WIDTH * 0.7, R.RAIL_HEIGHT, R.PANEL_SPACING),
+                R.COLOR);
+            rail.translate(0, y, 0);
+            parts.push(rail);
+        }
+
+        const geo = mergeGeometries(parts, false);
+        const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+        const mesh = new THREE.InstancedMesh(geo, mat, panels * 2);
+        mesh.frustumCulled = false;
+
+        const m = new THREE.Matrix4();
+        let i = 0;
+        for (const side of [-1, 1]) {
+            for (let p = 0; p < panels; p++) {
+                m.makeTranslation(side * R.X, CAMPUS.BORDER.HEIGHT, 8 - p * R.PANEL_SPACING);
+                mesh.setMatrixAt(i++, m);
+            }
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+
+        const group = new THREE.Group();
+        group.add(mesh);
+        this.scene.add(group);
+        this.bands.push({ group, period: R.PANEL_SPACING, id: 'railing' });
+    }
+
+    /** Continuous neatly-trimmed hedge behind the railing. */
+    _buildHedge() {
+        const H = CAMPUS.HEDGE;
+        const span = campusSpan();
+        const mesh = new THREE.InstancedMesh(
+            CampusManager._tinted(new THREE.BoxGeometry(H.WIDTH, H.HEIGHT, span), H.COLOR),
+            new THREE.MeshLambertMaterial({ vertexColors: true }),
+            2,
+        );
+        mesh.frustumCulled = false;
+        mesh.receiveShadow = true;
+        const m = new THREE.Matrix4();
+        [-1, 1].forEach((side, i) => {
+            m.makeTranslation(side * H.X, H.HEIGHT / 2, -span / 2 + 80);
+            mesh.setMatrixAt(i, m);
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+
+        const group = new THREE.Group();
+        group.add(mesh);
+        this.scene.add(group);
+        this.bands.push({ group, period: Infinity, id: 'hedge' });    // static
+    }
+
     /**
-     * Paved strip + kerb lip on both sides. Static (a uniform strip shows no
-     * motion cue), but the tiled paving texture carries the sense of speed.
+     * Raised veranda walkway in front of the classrooms: paved slab + kerb
+     * lip on the planted side. Static (a uniform strip shows no motion cue).
      */
-    _buildSidewalk() {
-        const S = CAMPUS.SIDEWALK;
+    _buildVeranda() {
+        const S = CAMPUS.VERANDA;
         const span = campusSpan();
         const tex = canvasTexture(drawPavingTexture(), {
             repeat: [1, Math.round(span / 6)],
@@ -104,7 +203,7 @@ export class CampusManager {
             m.makeTranslation(side * (S.INNER_X + S.WIDTH / 2), S.HEIGHT / 2, -span / 2 + 80);
             slabMesh.setMatrixAt(i, m);
             m.makeTranslation(
-                side * (S.INNER_X - 0.17),
+                side * (S.INNER_X + S.WIDTH + 0.17),
                 (S.HEIGHT * 1.35) / 2,
                 -span / 2 + 80,
             );
@@ -115,39 +214,41 @@ export class CampusManager {
         kerbMesh.instanceMatrix.needsUpdate = true;
         group.add(slabMesh, kerbMesh);
         this.scene.add(group);
-        this.bands.push({ group, period: Infinity, id: 'sidewalk' });   // static
+        this.bands.push({ group, period: Infinity, id: 'veranda' });  // static
     }
 
-    /** Green school railings: post + two rails, merged into one geometry. */
-    _buildFence() {
-        const F = CAMPUS.FENCE;
+    /**
+     * Ground-floor colonnade: a cream column + maroon edge beam every 4 m,
+     * standing on the veranda just in front of the building face — the open
+     * corridor of the reference, in real 3D.
+     */
+    _buildColonnade() {
+        const B = CAMPUS.BUILDINGS;
+        const S = CAMPUS.VERANDA;
         const span = campusSpan();
-        const panels = Math.floor(span / F.PANEL_SPACING);
+        const panel = 4;
+        const panels = Math.floor(span / panel);
+        const colH = B.FLOOR_HEIGHT - S.HEIGHT - 0.3;
 
         const parts = [
-            CampusManager._tinted(
-                new THREE.BoxGeometry(F.POST_WIDTH, F.POST_HEIGHT, F.POST_WIDTH),
-                F.POST_COLOR),
+            CampusManager._tinted(new THREE.BoxGeometry(0.4, colH, 0.4), 0xf4f1e8),
         ];
-        parts[0].translate(0, F.POST_HEIGHT / 2, 0);
-        for (const y of F.RAIL_Y) {
-            const rail = CampusManager._tinted(
-                new THREE.BoxGeometry(F.POST_WIDTH * 0.7, F.RAIL_HEIGHT, F.PANEL_SPACING),
-                F.COLOR);
-            rail.translate(0, y, 0);
-            parts.push(rail);
-        }
+        parts[0].translate(0, S.HEIGHT + colH / 2, 0);
+        const beam = CampusManager._tinted(new THREE.BoxGeometry(0.45, 0.3, panel), B.TRIM_COLOR);
+        beam.translate(0, S.HEIGHT + colH + 0.15, 0);
+        parts.push(beam);
 
-        const geo = mergeGeometries(parts, false);
-        const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
-        const mesh = new THREE.InstancedMesh(geo, mat, panels * 2);
+        const mesh = new THREE.InstancedMesh(
+            mergeGeometries(parts, false),
+            new THREE.MeshLambertMaterial({ vertexColors: true }),
+            panels * 2,
+        );
         mesh.frustumCulled = false;
-
         const m = new THREE.Matrix4();
         let i = 0;
         for (const side of [-1, 1]) {
             for (let p = 0; p < panels; p++) {
-                m.makeTranslation(side * F.X, 0, 8 - p * F.PANEL_SPACING);
+                m.makeTranslation(side * (B.INNER_X - 0.2), 0, 8 - p * panel);
                 mesh.setMatrixAt(i++, m);
             }
         }
@@ -156,17 +257,14 @@ export class CampusManager {
         const group = new THREE.Group();
         group.add(mesh);
         this.scene.add(group);
-        this.bands.push({ group, period: F.PANEL_SPACING, id: 'fence' });
+        this.bands.push({ group, period: panel, id: 'colonnade' });
     }
 
     /**
-     * Tall yellow school buildings. One InstancedMesh per variant so the
-     * window grid is baked at the right scale (a shared box + per-instance
-     * height would stretch the windows).
-     *
-     * Lattice: slot k sits at -(k·SPACING + jitter) and belongs to variant
-     * k % V, so each variant's own lattice repeats every V·SPACING — that is
-     * the period the group snaps back by.
+     * Long continuous school blocks. Modules butt together with no gap and
+     * no jitter (slot k at -(k·LENGTH)), so each side reads as one building
+     * running to the horizon; two floor-count variants alternate for rhythm,
+     * each variant's lattice repeating every V·LENGTH.
      */
     _buildBuildings() {
         const B = CAMPUS.BUILDINGS;
@@ -175,14 +273,15 @@ export class CampusManager {
         if (!V) return;
 
         const span = campusSpan();
-        const slots = Math.ceil(span / B.SPACING);
+        const slots = Math.ceil((span + B.LENGTH) / B.LENGTH);
 
         variants.forEach((variant, v) => {
-            const tex = canvasTexture(drawBuildingFacade(variant), {
+            const h = variant.floors * B.FLOOR_HEIGHT + 0.6 + 0.55;  // + plinth + cornice
+            const tex = canvasTexture(drawBuildingFacade(variant, B), {
                 anisotropy: this.anisotropy,
             });
             const mat = new THREE.MeshLambertMaterial({ map: tex });
-            const geo = new THREE.BoxGeometry(variant.w, variant.h, B.DEPTH);
+            const geo = new THREE.BoxGeometry(B.DEPTH, h, B.LENGTH);
 
             const slotsForVariant = [];
             for (let k = v; k < slots; k += V) slotsForVariant.push(k);
@@ -191,22 +290,11 @@ export class CampusManager {
             mesh.frustumCulled = false;
 
             const m = new THREE.Matrix4();
-            const q = new THREE.Quaternion();
-            const s = new THREE.Vector3();
-            const pos = new THREE.Vector3();
             let i = 0;
             for (const k of slotsForVariant) {
-                const z = -(k * B.SPACING + Math.random() * B.GAP_VAR);
+                const z = 12 - k * B.LENGTH;
                 for (const side of [-1, 1]) {
-                    // uniform jitter only — never distorts the window grid
-                    const jitter = 1 + (Math.random() * 2 - 1) * B.HEIGHT_VAR;
-                    s.setScalar(jitter);
-                    pos.set(
-                        side * (B.INNER_X + (variant.w * jitter) / 2),
-                        (variant.h * jitter) / 2,
-                        z,
-                    );
-                    m.compose(pos, q, s);
+                    m.makeTranslation(side * (B.INNER_X + B.DEPTH / 2), h / 2, z);
                     mesh.setMatrixAt(i++, m);
                 }
             }
@@ -215,7 +303,7 @@ export class CampusManager {
             const group = new THREE.Group();
             group.add(mesh);
             this.scene.add(group);
-            this.bands.push({ group, period: V * B.SPACING, id: `building:${v}` });
+            this.bands.push({ group, period: V * B.LENGTH, id: `building:${v}` });
         });
     }
 

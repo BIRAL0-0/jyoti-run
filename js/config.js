@@ -284,24 +284,23 @@ export const CONFIG = {
     // bushes only — rocks and traffic cones were pure road clutter that
     // clashed with the semi-realistic buildings.
     DECOR: {
-        SPACING: 13,                  // metres between decor slots (per side)
-        LANE_OFFSET_MIN: 12.5,        // decor starts this far from track centre
-        LANE_OFFSET_VAR: 4.0,         // + random outward scatter
-        SCALE_MIN: 0.9,               // slightly bigger now they sit further out
-        SCALE_VAR: 0.8,
-        TYPES: [
-            { id: 'tree',  weight: 0.7 },
-            { id: 'bush',  weight: 0.3 },
-        ],
+        // Organised school landscaping — a regular lattice mirrored on both
+        // sides (no random scatter): rounded ornamental trees on the outer
+        // line, bush planters on the inner line. Both spacings divide PERIOD
+        // so the lattice can recycle with a single snap.
+        TREE_X: 12.2,
+        TREE_SPACING: 12,
+        PLANTER_X: 9.9,
+        PLANTER_SPACING: 8,
+        PERIOD: 24,                 // lcm(TREE_SPACING, PLANTER_SPACING)
+        SCALE_VAR: 0.15,            // tiny size variance keeps the rows tidy
         COLORS: {
-            trunk:  0x8b5a2b,
-            leaf1:  0x3fa34d,
-            leaf2:  0x2e7d32,
-            bush:   0x46b04a,
-            rock:   0x9e9e9e,
-            rockD:  0x7d7d7d,
-            cone:   0xff8c42,
-            coneW:  0xf4f6f8,
+            trunk: 0x7a4a24,
+            leaf1: 0x3fa34d,
+            leaf2: 0x2e7d32,
+            bush: 0x46b04a,
+            planter: 0xcfc9bb,
+            planterD: 0xb0aa9c,
         },
     },
 
@@ -317,51 +316,73 @@ export const CONFIG = {
     CAMPUS: {
         ENABLED: true,
 
-        // Paved strip either side of the road, raised like a real kerb.
-        SIDEWALK: {
+        // Cross-section, centre out:
+        //   ROAD | BORDER(+RAILING) | HEDGE | planters/trees | VERANDA | BUILDINGS
+
+        // Raised concrete border hugging the path edge; the dark metal
+        // railing stands on top of it.
+        BORDER: {
             ENABLED: true,
             INNER_X: 6.0,             // road edge (GROUND.TILE_WIDTH / 2)
-            WIDTH: 3.0,
-            HEIGHT: 0.3,
-            COLOR: 0xd9d3c5,
-            KERB_COLOR: 0xb5ae9e,     // darker lip facing the road
+            WIDTH: 1.1,
+            HEIGHT: 0.5,
+            COLOR: 0xd8d2c4,
+            LIP_COLOR: 0xb8b2a4,
         },
 
-        // Green school railings between the sidewalk and the planted verge.
-        FENCE: {
+        // Dark metal railing on the border.
+        RAILING: {
             ENABLED: true,
-            X: 9.6,                   // distance from track centre
-            PANEL_SPACING: 5,         // metres between posts
-            POST_HEIGHT: 1.5,
-            POST_WIDTH: 0.12,
-            RAIL_HEIGHT: 0.1,
-            RAIL_Y: [0.55, 1.15],     // two horizontal rails
-            COLOR: 0x3f7d4a,
-            POST_COLOR: 0x2f5f38,
+            X: 6.55,
+            PANEL_SPACING: 4,
+            POST_HEIGHT: 1.15,
+            POST_WIDTH: 0.09,
+            RAIL_HEIGHT: 0.08,
+            RAIL_Y: [0.62, 1.02],
+            COLOR: 0x2e3440,
+            POST_COLOR: 0x232830,
         },
 
-        // Tall yellow school buildings, receding into the fog.
+        // Continuous neatly-trimmed hedge behind the railing.
+        HEDGE: {
+            ENABLED: true,
+            X: 8.2,
+            WIDTH: 0.9,
+            HEIGHT: 0.85,
+            COLOR: 0x3e8e46,
+        },
+
+        // Raised veranda walkway in front of the classrooms.
+        VERANDA: {
+            ENABLED: true,
+            INNER_X: 13.6,
+            WIDTH: 3.0,
+            HEIGHT: 0.35,
+            COLOR: 0xd9d3c5,
+            KERB_COLOR: 0xb5ae9e,
+        },
+
+        // Long continuous 2-3 storey school blocks. Modules butt together
+        // (no gaps, no jitter) so each side reads as ONE building running to
+        // the horizon; two floor-count variants alternate for rhythm.
         BUILDINGS: {
             ENABLED: true,
-            INNER_X: 17.0,            // closest face, from track centre
-            DEPTH: 18,                // how deep they run away from the track
-            SPACING: 20,              // metres between buildings along z
-            GAP_VAR: 1,               // + random extra gap
-            HEIGHT_VAR: 0.10,         // +/- fraction of height jitter
-            // One InstancedMesh per variant (1 draw call each). Height is
-            // baked into the geometry so the window grid never stretches.
+            INNER_X: 16.6,            // closest face, from track centre
+            DEPTH: 9,                 // block width, away from the track
+            LENGTH: 24,               // module length along the track
+            FLOOR_HEIGHT: 3.4,
             VARIANTS: [
-                { w: 24, h: 36, floors: 9, cols: 8 },
-                { w: 18, h: 28, floors: 7, cols: 6 },
-                { w: 28, h: 44, floors: 11, cols: 9 },
+                { floors: 3 },
+                { floors: 2 },
             ],
-            WALL_COLOR: '#e6c469',    // yellow school wall
-            WALL_SHADE: '#cfab52',    // recessed/shadowed band
+            WALL_COLOR: '#e8c761',    // warm yellow school wall
+            WALL_SHADE: '#d3ae52',    // recessed/shadowed band
             WINDOW_COLOR: '#4d6f8c',
             WINDOW_GLASS: '#7d9db8',
             FRAME_COLOR: '#f4f1e8',
-            PLINTH_COLOR: '#8d6a4a',  // stone base course
-            CORNICE_COLOR: '#b8863f', // roof trim
+            TRIM_COLOR: '#8a2f2b',    // maroon architectural trim
+            PLINTH_COLOR: '#c9c2b2',  // concrete base course
+            DARK_COLOR: '#4a4f57',    // open corridor shadow
         },
     },
 
@@ -376,12 +397,14 @@ export const CONFIG = {
             HORIZON: '#cfe6f5',       // pale haze down at the skyline
         },
         FOG_COLOR: 0xcfe6f5,          // == GRADIENT.HORIZON (seamless horizon)
-        CLOUD_COUNT: 6,
+        CLOUD_COUNT: 5,
         CLOUD_DRIFT: 0.4,             // u/s sideways drift
         CLOUD_SPREAD_X: 46,
         CLOUD_MIN_Y: 13,
         CLOUD_MAX_Y: 24,
         CLOUD_Z: -70,
+        CLOUD_SIZE_MIN: 6,            // small, soft puffs (was 10-24: too big)
+        CLOUD_SIZE_MAX: 12,
     },
 
     // ========== SCENERY BILLBOARDS ==========
@@ -391,7 +414,12 @@ export const CONFIG = {
     // Widths are DERIVED from each image's own aspect ratio (height is
     // authoritative), so no scenery art is ever stretched.
     SCENERY: {
-        ENABLED: true,
+        // OFF by default: the far end of the road is the procedural campus
+        // dissolving into the sky-coloured fog, with the real gradient sky and
+        // a few small clouds above it — no photo billboards, so nothing at the
+        // horizon can read as a pasted/duplicated image. Set true to opt in to
+        // the drop-in renders below (horizon + gate).
+        ENABLED: false,
 
         // Distant backdrop, re-anchored to the camera every frame so it never
         // gets closer (same "infinite distance" trick as a skybox).
@@ -405,6 +433,17 @@ export const CONFIG = {
             DISTANCE: 200,            // metres ahead of the camera
             PARALLAX: 0.1,            // lateral drift vs camera x (0 = pinned)
             OPACITY: 1,
+            // The render ships with its own sky baked in; at load time those
+            // pixels are keyed out (cool blues + cool whites -> transparent)
+            // so the real gradient sky and drifting clouds show through
+            // behind the gate instead of a pasted rectangle. Warm whites
+            // (marble) and yellows (buildings) are kept. SKYLINE is the image
+            // fraction below which nothing is ever touched (road/ground).
+            SKY_KEY: {
+                ENABLED: true,
+                SKYLINE: 0.62,
+                FEATHER: 0.12,        // vertical fade band above the skyline
+            },
         },
 
         // Landmarks the runner passes through. Each entry is either a

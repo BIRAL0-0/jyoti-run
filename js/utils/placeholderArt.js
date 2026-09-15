@@ -646,67 +646,115 @@ export function drawPavingTexture() {
  *
  * @param {{floors:number, cols:number}} v  building variant from config
  */
-export function drawBuildingFacade(v) {
-    const cell = 56;
-    const plinth = Math.round(cell * 0.55);
-    const cornice = Math.round(cell * 0.5);
-    const W = v.cols * cell;
-    const H = v.floors * cell + plinth + cornice;
+/**
+ * Facade for one 24 m school module, drawn in metre coordinates (16 px/m) so
+ * windows/doors/trim keep real proportions on the box face:
+ *
+ *  - maroon roof cornice + concrete plinth
+ *  - ground floor: open veranda — shadowed corridor, cream columns, dark
+ *    metal railing, classroom doors + windows behind
+ *  - upper floors: framed classroom windows with maroon sills, plus a dark
+ *    balcony railing across each floor (open-corridor look)
+ *
+ * @param {{floors:number}} v   building variant from CONFIG.CAMPUS.BUILDINGS
+ * @param {object} B            CONFIG.CAMPUS.BUILDINGS (colours + floor height)
+ */
+export function drawBuildingFacade(v, B) {
+    const PPM = 16;
+    const LEN = 24;
+    const floorH = B.FLOOR_HEIGHT ?? 3.4;
+    const plinth = 0.6;
+    const cornice = 0.55;
+    const h = v.floors * floorH + plinth + cornice;
+    const W = Math.round(LEN * PPM);
+    const H = Math.round(h * PPM);
     const { canvas, ctx } = makeCanvas(W, H);
-
-    const C = {
-        wall: '#e6c469', shade: '#cfab52', window: '#4d6f8c',
-        glass: '#7d9db8', frame: '#f4f1e8', plinth: '#8d6a4a', cornice: '#b8863f',
-    };
+    const X = (m) => Math.round(m * PPM);                 // metre -> px
+    const Y = (m) => Math.round((h - m) * PPM);           // metre-up -> px-down
 
     // wall
-    ctx.fillStyle = C.wall;
+    ctx.fillStyle = B.WALL_COLOR;
     ctx.fillRect(0, 0, W, H);
-
-    // grime gradient (semi-realistic: dirt settles low)
+    // soft vertical grime so big walls do not read flat
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, 'rgba(255,255,255,0.14)');
-    g.addColorStop(0.55, 'rgba(0,0,0,0)');
-    g.addColorStop(1, 'rgba(60,40,10,0.18)');
+    g.addColorStop(0, 'rgba(255,255,255,0.12)');
+    g.addColorStop(0.5, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(70,45,10,0.16)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
-    // floors, bottom-up: row 0 is the ground floor
     for (let f = 0; f < v.floors; f++) {
-        const yTop = H - cornice - (f + 1) * cell;
-        // recessed band under each floor slab
-        ctx.fillStyle = C.shade;
-        ctx.fillRect(0, yTop + cell - 9, W, 9);
+        const y0 = plinth + f * floorH;                   // floor base (m up)
 
-        for (let c = 0; c < v.cols; c++) {
-            const ww = Math.round(cell * 0.56);
-            const wh = Math.round(cell * 0.6);
-            const x = c * cell + (cell - ww) / 2;
-            const y = yTop + (cell - wh) / 2 + 2;
-
-            // frame
-            ctx.fillStyle = C.frame;
-            ctx.fillRect(x - 4, y - 4, ww + 8, wh + 8);
-            // glass
-            ctx.fillStyle = C.window;
-            ctx.fillRect(x, y, ww, wh);
-            // a believable highlight + the odd lit/unlit room
-            const lit = Math.random() < 0.22;
-            ctx.fillStyle = lit ? '#f6e7b4' : C.glass;
-            ctx.fillRect(x, y, ww, Math.round(wh * 0.42));
-            // mullion
-            ctx.fillStyle = C.frame;
-            ctx.fillRect(x + Math.round(ww / 2) - 2, y, 4, wh);
+        if (f === 0) {
+            // ---- ground floor: open veranda / corridor ----
+            ctx.fillStyle = B.DARK_COLOR;                 // corridor shadow
+            ctx.fillRect(0, Y(y0 + floorH - 0.35), W, X(floorH - 0.35));
+            // classroom doors + windows behind the columns
+            for (let m = 2; m < LEN - 2; m += 8) {
+                ctx.fillStyle = '#7a4a3a';                // door
+                ctx.fillRect(X(m), Y(y0 + 2.3), X(1.3), X(2.3));
+                ctx.fillStyle = B.WINDOW_COLOR;           // window beside it
+                ctx.fillRect(X(m + 2.2), Y(y0 + 2.2), X(2.4), X(1.6));
+                ctx.fillStyle = B.WINDOW_GLASS;
+                ctx.fillRect(X(m + 2.2), Y(y0 + 2.2), X(2.4), X(0.7));
+            }
+            // dark metal railing across the corridor opening
+            ctx.fillStyle = '#232830';
+            ctx.fillRect(0, Y(y0 + 1.05), W, X(0.08));
+            for (let m = 0; m <= LEN; m += 0.5) {
+                ctx.fillRect(X(m) - 1, Y(y0 + 1.05), 2, X(1.0));
+            }
+            // cream columns every 4 m
+            for (let m = 0; m <= LEN; m += 4) {
+                ctx.fillStyle = B.FRAME_COLOR;
+                ctx.fillRect(X(m) - X(0.2), Y(y0 + floorH - 0.35), X(0.4), X(floorH - 0.35));
+                ctx.fillStyle = 'rgba(0,0,0,0.18)';
+                ctx.fillRect(X(m) + X(0.08), Y(y0 + floorH - 0.35), X(0.12), X(floorH - 0.35));
+            }
+            // maroon band separating ground floor from upper
+            ctx.fillStyle = B.TRIM_COLOR;
+            ctx.fillRect(0, Y(y0 + floorH), W, X(0.3));
+            continue;
         }
+
+        // ---- upper floors: window row + balcony railing ----
+        const sill = y0 + 1.0;
+        for (let m = 1.5; m < LEN - 1.5; m += 3) {
+            const ww = 1.6, wh = 1.5;
+            ctx.fillStyle = B.FRAME_COLOR;
+            ctx.fillRect(X(m) - 3, Y(sill + wh) - 3, X(ww) + 6, X(wh) + 6);
+            ctx.fillStyle = B.WINDOW_COLOR;
+            ctx.fillRect(X(m), Y(sill + wh), X(ww), X(wh));
+            const lit = Math.random() < 0.18;
+            ctx.fillStyle = lit ? '#f6e7b4' : B.WINDOW_GLASS;
+            ctx.fillRect(X(m), Y(sill + wh), X(ww), X(wh * 0.45));
+            ctx.fillStyle = B.FRAME_COLOR;
+            ctx.fillRect(X(m + ww / 2) - 2, Y(sill + wh), 3, X(wh));
+            // maroon sill
+            ctx.fillStyle = B.TRIM_COLOR;
+            ctx.fillRect(X(m) - 4, Y(sill), X(ww) + 8, X(0.16));
+        }
+        // dark balcony railing across the lower part of the floor
+        ctx.fillStyle = '#232830';
+        ctx.fillRect(0, Y(y0 + 1.0), W, X(0.07));
+        for (let m = 0; m <= LEN; m += 0.5) {
+            ctx.fillRect(X(m) - 1, Y(y0 + 1.0), 2, X(0.95));
+        }
+        // floor slab band with maroon edge
+        ctx.fillStyle = B.WALL_SHADE;
+        ctx.fillRect(0, Y(y0 + floorH), W, X(0.35));
+        ctx.fillStyle = B.TRIM_COLOR;
+        ctx.fillRect(0, Y(y0 + floorH), W, X(0.1));
     }
 
-    // stone plinth + roof cornice
-    ctx.fillStyle = C.plinth;
-    ctx.fillRect(0, H - plinth, W, plinth);
-    ctx.fillStyle = C.cornice;
-    ctx.fillRect(0, 0, W, cornice);
-    ctx.fillStyle = 'rgba(0,0,0,0.16)';
-    ctx.fillRect(0, cornice - 6, W, 6);
+    // concrete plinth + maroon roof cornice
+    ctx.fillStyle = B.PLINTH_COLOR;
+    ctx.fillRect(0, Y(plinth), W, X(plinth));
+    ctx.fillStyle = B.TRIM_COLOR;
+    ctx.fillRect(0, 0, W, X(cornice));
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    ctx.fillRect(0, X(cornice), W, 4);
 
     return canvas;
 }
