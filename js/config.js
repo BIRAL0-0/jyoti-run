@@ -603,96 +603,6 @@ export const CONFIG = {
         DESKTOP_ANISOTROPY: 8,
     },
 
-    // ========== 3D CHARACTERS (Phase 3) ==========
-    // Real skinned 3D characters built on the CC0 KayKit "Universal Rig"
-    // (assets/models/rig/*.glb — see research/ASSET_SOURCES.md). The bodies,
-    // clothes and the *bending* slide are authored in js/characters/.
-    //
-    // MODE:
-    //   '3d'     — skinned characters (default; what the owner brief asks for)
-    //   'sprite' — the original billboard sprites (kept as a fallback and for
-    //              the aspect-handling contract tests). Auto-selected if the
-    //              rig fails to load.
-    // URL override: ?char=3d | ?char=sprite (used by the harness suites).
-    CHARACTER: {
-        MODE: '3d',
-        // Animation-only GLBs (bones, no mesh). Loaded once, shared by both
-        // characters. Each is CC0; bytes are upstream-unmodified.
-        RIG_PACKS: [
-            'assets/models/rig/Med_MovementBasic.glb',
-            'assets/models/rig/Med_MovementAdvanced.glb',
-            'assets/models/rig/Med_General.glb',
-        ],
-        // World height of the standing crown (feet at y=0). Tuned so a slide
-        // folds the body under the HIGH obstacle's 2.0 clearance while the
-        // standing figure still reads at SPRITE_HEIGHT. Collision hitboxes are
-        // unchanged (they live in PLAYER.* / OBSTACLES.TYPES).
-        STUDENT_HEIGHT: 2.85,
-        TEACHER_HEIGHT: 3.0,
-        // Body authoring (rig-space proportions; see CharacterBody.js)
-        BUILD: {
-            RADIAL_SEGMENTS: 12,      // tube roundness (higher = smoother, costlier)
-            TORSO_SEGMENTS: 14,       // stations along spine/limbs
-            SMOOTH_SHADING: true,
-        },
-        SHADOWS: true,                // characters cast a real shadow
-        // Procedural slide-bend layer (the "bend, don't flatten" requirement).
-        // Per-bone LOCAL euler targets (radians) blended over the run cycle.
-        SLIDE: {
-            ENABLED: true,
-            BLEND_IN: 0.11,           // seconds to fold into the slide
-            BLEND_OUT: 0.16,          // seconds to unfold back to the run
-            ROOT_DROP: 0.20,          // rig-units the hips sink (of ~1.24 crown 1.57)
-            // bone → [x, y, z] euler (radians), applied ADDITIVELY on top of the
-            // run-cycle pose and blended by the slide weight. Tuned in
-            // .harness/tools/tune-slide.mjs: folds the crown to ~1.56 world
-            // units (under the HIGH bar's 2.0 clearance) with a straight lead
-            // leg + tucked trail leg, hips ~0.37 off the floor. Never flattens.
-            POSE: {
-                hips:       [ 0.22, 0.00, 0.05],
-                spine:      [ 0.86, 0.00, 0.00],
-                chest:      [ 0.62, 0.00, 0.00],
-                head:       [-0.32, 0.00, 0.00],   // keep the face up/forward
-                upperlegl:  [ 0.90, 0.00, 0.05],   // lead leg shot forward
-                lowerlegl:  [-0.36, 0.00, 0.00],
-                footl:      [ 0.10, 0.00, 0.00],
-                upperlegr:  [-1.16, 0.00, -0.05],  // trail leg tucked under
-                lowerlegr:  [ 1.46, 0.00, 0.00],   // knee fully flexed
-                footr:      [ 0.30, 0.00, 0.00],
-                upperarml:  [-0.70, 0.00, 0.55],   // arms back for balance
-                lowerarml:  [ 0.00, 0.00, 0.62],
-                upperarmr:  [-0.70, 0.00, -0.55],
-                lowerarmr:  [ 0.00, 0.00, -0.62],
-            },
-        },
-        // Bank/yaw the whole body into a lane change (real 3D, replaces the
-        // sprite's cos(yaw) foreshortening).
-        BANK: {
-            YAW: 0.28,                // radians of body yaw per unit lane offset
-            ROLL: 0.16,               // radians of inward roll per unit offset
-            RATE: 9,                  // smoothing (1/s)
-        },
-        // Subtle run-cycle extras layered over the CC0 clip
-        RUN: {
-            SPEED_SCALE_MIN: 0.85,    // clip timeScale at INITIAL_SPEED
-            SPEED_SCALE_MAX: 1.7,     // clip timeScale at MAX_SPEED
-            SWAY: 0.05,               // lateral spine sway (radians)
-            BOB: 0.0,                 // extra root bob (the clip already bobs)
-        },
-        STUMBLE: {
-            WOBBLE: 0.22,             // body roll amplitude while stumbling
-            WOBBLE_SPEED: 15,
-        },
-        // Runner-cam dip while sliding: the camera ducks with the body so the
-        // fold (and the bar being cleared) reads clearly.
-        SLIDE_CAMERA: {
-            DROP: 0.85,               // world units the camera sinks at full slide
-            PULL: 0.9,                // world units closer to the runner
-            LOOK_DOWN: 0.5,           // look-at Y offset
-            FOV: 5,                   // extra FOV degrees at full slide
-        },
-    },
-
     // ========== DEBUG ==========
     DEBUG: {
         SHOW_FPS: false,              // FPS counter
@@ -722,5 +632,4 @@ export const UI = CONFIG.UI;
 export const INPUT = CONFIG.INPUT;
 export const STORAGE = CONFIG.STORAGE;
 export const PERFORMANCE = CONFIG.PERFORMANCE;
-export const CHARACTER = CONFIG.CHARACTER;
 export const DEBUG = CONFIG.DEBUG;

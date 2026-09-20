@@ -69,23 +69,28 @@ npx http-server -p 8000
 > map, so keep internet access on first load (or cache them into `assets/lib/`
 > and edit the import map in `index.html` for fully-offline use).
 
-## 🏃 Real 3D Characters (student + teacher)
+## 🏃 Characters: billboard sprites of your own art
 
-Both runners are **real skinned 3D models**, not billboards — the student in his
-black suit, tie and ID lanyard, the teacher in his cap, blue polo and jeans
-(both male, matching the reference art in `assets/source-art/`). They run on the
-free CC0 [kaykit_char](https://github.com/sketchpunklabs/kaykit_char) skeleton and
-animation clips; bodies and wardrobes are generated in code so they match the
-art from every side.
+Both runners are rendered as **billboard sprites cut from your reference art**
+(`assets/source-art/` → `assets/textures/`), which is exactly what the brief
+asked for: the student in his suit, tie and ID lanyard, the teacher in his cap,
+blue polo and jeans — the same pixels you supplied, never a look-alike.
 
-- **Run / jump / slide** all drive the rig. **Sliding bends the body** — hips,
-  knees, spine and arms fold into a runner's slide that clears overhead bars;
-  the model is never squashed or flattened (the camera even ducks with you).
-- Fallback: if the rig can't load the game silently uses the classic sprites.
-  Force either look with `?char=3d` / `?char=sprite`, or `CONFIG.CHARACTER.MODE`.
-- Verification: `node tools/test-character.mjs` (rig maths, 15 checks) and
-  `node tests/character.mjs` (in-browser, 16 checks + angle screenshots) under
-  `.harness/`. Full design + numbers: [`research/CHARACTER_SYSTEM.md`](research/CHARACTER_SYSTEM.md).
+- **Aspect never lies.** The plane height is authoritative and the width is
+  derived from the PNG's own aspect ratio (`PLAYER.FIT_ASPECT`), so the art is
+  never stretched or squashed.
+- **The turn is faked the way sprite games fake it**: lane changes foreshorten
+  the billboard on X and roll it in screen space, and the optional
+  `*-front.png` render takes over when the body genuinely faces the camera
+  (a stumble, the teacher's grab). See `PLAYER.VIEW_*` / `TEACHER.VIEW_*`.
+- **Slide** crouches the sprite to `PLAYER.SLIDE_HEIGHT` — the same hitbox the
+  HIGH obstacles are tuned against, so nothing about gameplay changes.
+
+A full skinned-3D character pass was tried and **removed** (PR #7 → this
+revert): the procedural rig did not read as your characters, and the repo is
+better off carrying one honest renderer than two. `js/entities/Player.js` and
+`Teacher.js` stay the single source of truth for both visuals and hitboxes.
+Notes for anyone revisiting real 3D: [`research/CHARACTER_APPROACH.md`](research/CHARACTER_APPROACH.md).
 
 ## 🎨 Replacing the Placeholder Art
 
@@ -117,30 +122,41 @@ assets/textures/
 
 **The ground tile.** `assets/textures/ground-gravel.png` is a real 1024×1024
 seamless tile derived from `assets/source-art/ground-gravel-source.png` by
-`.harness/art/make-ground-tile.mjs`. The source was a perspective photo
-(portrait, transparent above the horizon), so the script finds the largest
-fully-opaque square, flattens alpha, and applies a **wrap cross-fade**: each
-edge pixel blends with its sample one tile away, which turns the wrap-around
-seam into an ordinary interior adjacency.
+`.harness/art/make-ground-tile.mjs`. The source is a perspective photo
+(portrait, transparent above the horizon), so the script needs a square that is
+**pavers only**: it flattens alpha, upscales and applies a **wrap cross-fade**
+(each edge pixel blends with its sample one tile away, which turns the
+wrap-around seam into an ordinary interior adjacency).
+
+The crop matters: the first version used the *widest* square in the photo and
+therefore included the concrete border, the metal railing and the hedge along
+the left edge — tiled down the road that baked a duplicated wall strip into the
+left lane, ending in a hard diagonal seam. The crop is now chosen by
+`.harness/art/find-ground-crop.mjs`, which colour-classifies every source pixel
+(road / hedge / metal / stone / sky) and scores candidate squares on purity,
+perspective stretch (how much the corridor narrows over the crop's own height —
+that convergence must not be baked into the texture) and top-to-bottom tone
+drift.
 
 Seam score, measured as "wrap-around neighbour difference ÷ average interior
 neighbour difference" on the finished tile:
 
-| | before | after |
+| | before (raw crop) | after (seamless tile) |
 |---|---|---|
-| columns | ×6.6 | **×0.64** |
-| rows | ×4.8 | **×0.70** |
+| columns | ×5.00 | **×0.70** |
+| rows | ×4.33 | **×0.69** |
 
 Below 1.0 means the seam is *quieter* than the texture's own average pixel
-pair — i.e. the repeat is invisible. Re-run or re-tune with:
+pair — i.e. the repeat is invisible. Re-build it with:
 
 ```bash
 cd .harness && npm install pngjs
+node art/find-ground-crop.mjs ../assets/source-art/ground-gravel-source.png   # pick a clean crop
 node art/make-ground-tile.mjs \
-  ../assets/source-art/ground-gravel-source.png \
-  ../assets/textures/ground-gravel.png 1024 64 0 641 780
-#                          tile size ^^^^  ^  ^^^^^^^^^ crop
+  ../assets/source-art/ground-gravel-source.png /tmp/tile.png 1024 64 155 905 520
+#                          tile size ^^^^  ^  ^^^^^^^^^^^ crop
 #                            fade band ^^^^
+convert /tmp/tile.png -strip -colors 256 ../assets/textures/ground-gravel.png
 ```
 
 **Faking 3D turns.** A `THREE.Sprite` always faces the camera, and three.js
@@ -248,9 +264,8 @@ horizon.
 
 ### Adding 3D models (optional, advanced)
 
-*Characters already ship as real 3D rigs* (see above). Obstacles, however, are
-intentionally built from primitives in code (1 draw call each, zero downloads).
-If you want GLB models instead, `scripts/download-assets.sh`
+Obstacles are intentionally built from primitives in code (1 draw call each,
+zero downloads). If you want GLB models instead, `scripts/download-assets.sh`
 fetches the CC0 packs researched in Phase 1 (Kenney Furniture Kit, Quaternius
 traffic props, KayKit road bits) into `assets/models/`. To use them you'd add
 `GLTFLoader` (from `three/addons/loaders/GLTFLoader.js`) in
@@ -397,20 +412,15 @@ Browsers without WebGL or import-map support get a friendly fallback screen.
 │   ├── main.js                 # boot, game loop, collisions, camera
 │   ├── managers/
 │   │   ├── GroundManager.js    # instanced tile ring + decor + clouds
+│   │   ├── CampusManager.js    # procedural campus: buildings, verandas, hedges, railings
+│   │   ├── SceneryManager.js   # optional photo billboards (horizon + gate), off by default
 │   │   ├── ObstacleManager.js  # pooled props, difficulty-driven spawning
 │   │   ├── CollectibleManager.js # grade papers, patterns, A+ glow
 │   │   ├── AudioManager.js     # Web-Audio synth + Howler override
 │   │   └── UIManager.js        # screens, HUD, popups, vignette
 │   ├── entities/
-│   │   ├── Player.js           # runner: 3D rig (or sprite fallback) + dust puffs
-│   │   └── Teacher.js          # chase state machine + fairness guards (3D-aware)
-│   ├── characters/             # 3D character system (rig, bodies, skinning, anims)
-│   │   ├── RigLibrary.js       # CC0 skeleton + clips loader/cache
-│   │   ├── CharacterBody.js    # procedural bodies & wardrobes (male student/teacher)
-│   │   ├── skinning.js         # weight + merge helpers
-│   │   ├── AnimController.js   # clip FSM + the slide BEND + bank/wobble
-│   │   ├── CharacterRig.js     # public rig API
-│   │   └── CharacterFactory.js # studentSpec()/teacherSpec() wardrobes
+│   │   ├── Player.js           # sprite controller + dust puffs
+│   │   └── Teacher.js          # chase state machine + fairness guards
 │   └── utils/
 │       ├── InputHandler.js     # keyboard + swipe
 │       ├── ObjectPool.js       # generic pooling (report §4.2)
@@ -419,24 +429,17 @@ Browsers without WebGL or import-map support get a friendly fallback screen.
 │       ├── placeholderArt.js   # ALL procedural art (swappable)
 │       └── AssetLoader.js      # optional-file probes + fallbacks
 ├── assets/                     # shipped sprites/audio + drop-in overrides
-│   ├── source-art/             # reference art the characters & sprites match
-│   ├── models/rig/             # CC0 kaykit_char skeleton + clips (vendored)
+│   ├── source-art/             # full-size renders the sprites were cut from
 │   └── scenery/                # school photos, stored for later
 ├── .harness/                   # offline verification rig (dev only, see .harness/README.md)
 ├── scripts/download-assets.sh  # optional CC0 asset fetcher (Phase 1)
-└── research/
-    ├── RESEARCH_REPORT.md      # Phase 1 research
-    ├── CHARACTER_SYSTEM.md     # shipped 3D character design + verification
-    └── screenshots/            # renders from the browser character tests
+└── research/RESEARCH_REPORT.md # Phase 1 research
 ```
 
 ## 📜 Credits
 
 **Built with**
-- [Three.js r160](https://threejs.org) (MIT) — rendering, sprites, instancing, skinning
-- [kaykit_char](https://github.com/sketchpunklabs/kaykit_char) (CC0-1.0) — the
-  humanoid skeleton + run/jump/idle/crouch animation clips used by both characters
-  (upstream: Kay Lousberg, "Character & Animations")
+- [Three.js r160](https://threejs.org) (MIT) — rendering, sprites, instancing
 - [Howler.js 2.2.4](https://howlerjs.com) (MIT) — optional real-file audio
 - Vanilla ES modules — no build tools, no frameworks
 

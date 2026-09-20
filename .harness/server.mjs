@@ -51,7 +51,6 @@ export function createServer(root, opts = {}) {
     const vendor = {
       '__vendor/three.module.js': 'three.module.js',
       '__vendor/addons/utils/BufferGeometryUtils.js': 'BufferGeometryUtils.js',
-      '__vendor/addons/loaders/GLTFLoader.js': 'GLTFLoader.js',
       '__vendor/BufferGeometryUtils.js': 'BufferGeometryUtils.js',
       '__vendor/howler.min.js': 'howler.min.js',
     };

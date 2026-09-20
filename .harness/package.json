@@ -4,8 +4,8 @@
   "description": "Offline verification rig for School Runner (dev only; not part of the game).",
   "scripts": {
     "test": "node tests/run.mjs",
-    "test:character": "node --import ./tools/node-loader.mjs tools/test-character.mjs",
-    "test:character:browser": "node tests/character.mjs",
+    "test:shots": "node tests/shot.mjs",
+    "test:soak": "node tests/soak.mjs 1",
     "serve": "node server.mjs"
   },
   "dependencies": {

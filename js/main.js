@@ -16,7 +16,7 @@
 import * as THREE from 'three';
 import {
     CONFIG, GROUND, LANES, PLAYER, TEACHER, OBSTACLES, GRADES,
-    SKY, CAMERA, LIGHTING, PERFORMANCE, CHARACTER,
+    SKY, CAMERA, LIGHTING, PERFORMANCE,
 } from './config.js';
 import { GroundManager } from './managers/GroundManager.js';
 import { SceneryManager } from './managers/SceneryManager.js';
@@ -31,7 +31,6 @@ import { InputHandler } from './utils/InputHandler.js';
 import { GameState, STATE } from './utils/GameState.js';
 import { calculateDifficulty } from './utils/Difficulty.js';
 import { probeExisting, loadImageTexture, canvasTexture } from './utils/AssetLoader.js';
-import { initRigLibrary } from './characters/RigLibrary.js';
 import { drawSkyGradient } from './utils/placeholderArt.js';
 
 const TEXTURE_URLS = {
@@ -256,13 +255,6 @@ class SchoolRunnerGame {
             ]);
         } catch (e) { /* fonts are optional */ }
 
-        // 3D characters: load the CC0 rig once; fall back to sprites if absent
-        // or if ?char=sprite / CONFIG.CHARACTER.MODE asks for the legacy look.
-        const rigLib = await initRigLibrary();
-        const urlChar = new URLSearchParams(location.search).get('char');
-        const requested = (urlChar === '3d' || urlChar === 'sprite') ? urlChar : CHARACTER.MODE;
-        this.charMode = (requested === '3d' && rigLib) ? '3d' : 'sprite';
-
         const existing = await probeExisting(Object.values(TEXTURE_URLS));
 
         const groundTex = existing.has(TEXTURE_URLS.ground)
@@ -288,8 +280,8 @@ class SchoolRunnerGame {
         this.ground.load(groundTex, this.decorDensity);
         this.campus.load();
         await this.scenery.load();
-        this.player.load(studentTex, studentFrontTex, { charMode: this.charMode });
-        this.teacher.load(teacherTex, teacherFrontTex, { charMode: this.charMode });
+        this.player.load(studentTex, studentFrontTex);
+        this.teacher.load(teacherTex, teacherFrontTex);
         this.obstacles.init();
         this.collectibles.init();
         await this.audio.load();
@@ -308,9 +300,7 @@ class SchoolRunnerGame {
 
         // gentle notice when running on generated art
         const placeholders = [
-            !groundTex && 'ground',
-            (this.charMode === 'sprite' && !studentTex) && 'student',
-            (this.charMode === 'sprite' && !teacherTex) && 'teacher',
+            !groundTex && 'ground', !studentTex && 'student', !teacherTex && 'teacher',
         ].filter(Boolean);
         if (placeholders.length) {
             this.ui.toast('🎨 Built-in placeholder art in use — drop your PNGs into ' +
@@ -561,16 +551,14 @@ class SchoolRunnerGame {
             if (this._shakeTime <= 0) this._shakeIntensity = 0;
         }
 
-        const sw = this.player?.slideWeight ?? 0;
-        const dip = CHARACTER.SLIDE_CAMERA;
-        this.camera.position.y = CAMERA.POSITION_OFFSET.y + sy - dip.DROP * sw;
-        this.camera.position.z = CAMERA.POSITION_OFFSET.z - dip.PULL * sw;
-        this.camera.lookAt(px * 0.3, 1.6 - dip.LOOK_DOWN * sw, -CAMERA.LOOK_AHEAD_DISTANCE);
+        this.camera.position.y = CAMERA.POSITION_OFFSET.y + sy;
+        this.camera.position.z = CAMERA.POSITION_OFFSET.z;
+        this.camera.lookAt(px * 0.3, 1.6, -CAMERA.LOOK_AHEAD_DISTANCE);
 
         // subtle speed FOV kick
         const t = THREE.MathUtils.clamp(
             (speed - GROUND.INITIAL_SPEED) / (GROUND.MAX_SPEED - GROUND.INITIAL_SPEED), 0, 1);
-        const fov = CAMERA.FOV + t * CAMERA.FOV_SPEED_KICK + CHARACTER.SLIDE_CAMERA.FOV * sw;
+        const fov = CAMERA.FOV + t * CAMERA.FOV_SPEED_KICK;
         if (Math.abs(fov - this.camera.fov) > 0.05) {
             this.camera.fov = fov;
             this.camera.updateProjectionMatrix();
