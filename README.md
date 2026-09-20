@@ -69,6 +69,24 @@ npx http-server -p 8000
 > map, so keep internet access on first load (or cache them into `assets/lib/`
 > and edit the import map in `index.html` for fully-offline use).
 
+## 🏃 Real 3D Characters (student + teacher)
+
+Both runners are **real skinned 3D models**, not billboards — the student in his
+black suit, tie and ID lanyard, the teacher in his cap, blue polo and jeans
+(both male, matching the reference art in `assets/source-art/`). They run on the
+free CC0 [kaykit_char](https://github.com/sketchpunklabs/kaykit_char) skeleton and
+animation clips; bodies and wardrobes are generated in code so they match the
+art from every side.
+
+- **Run / jump / slide** all drive the rig. **Sliding bends the body** — hips,
+  knees, spine and arms fold into a runner's slide that clears overhead bars;
+  the model is never squashed or flattened (the camera even ducks with you).
+- Fallback: if the rig can't load the game silently uses the classic sprites.
+  Force either look with `?char=3d` / `?char=sprite`, or `CONFIG.CHARACTER.MODE`.
+- Verification: `node tools/test-character.mjs` (rig maths, 15 checks) and
+  `node tests/character.mjs` (in-browser, 16 checks + angle screenshots) under
+  `.harness/`. Full design + numbers: [`research/CHARACTER_SYSTEM.md`](research/CHARACTER_SYSTEM.md).
+
 ## 🎨 Replacing the Placeholder Art
 
 Every image is an **optional drop-in override**. Put it here and reload — no
@@ -230,8 +248,9 @@ horizon.
 
 ### Adding 3D models (optional, advanced)
 
-Obstacles are intentionally built from primitives in code (1 draw call each,
-zero downloads). If you want GLB models instead, `scripts/download-assets.sh`
+*Characters already ship as real 3D rigs* (see above). Obstacles, however, are
+intentionally built from primitives in code (1 draw call each, zero downloads).
+If you want GLB models instead, `scripts/download-assets.sh`
 fetches the CC0 packs researched in Phase 1 (Kenney Furniture Kit, Quaternius
 traffic props, KayKit road bits) into `assets/models/`. To use them you'd add
 `GLTFLoader` (from `three/addons/loaders/GLTFLoader.js`) in
@@ -383,8 +402,15 @@ Browsers without WebGL or import-map support get a friendly fallback screen.
 │   │   ├── AudioManager.js     # Web-Audio synth + Howler override
 │   │   └── UIManager.js        # screens, HUD, popups, vignette
 │   ├── entities/
-│   │   ├── Player.js           # sprite controller + dust puffs
-│   │   └── Teacher.js          # chase state machine + fairness guards
+│   │   ├── Player.js           # runner: 3D rig (or sprite fallback) + dust puffs
+│   │   └── Teacher.js          # chase state machine + fairness guards (3D-aware)
+│   ├── characters/             # 3D character system (rig, bodies, skinning, anims)
+│   │   ├── RigLibrary.js       # CC0 skeleton + clips loader/cache
+│   │   ├── CharacterBody.js    # procedural bodies & wardrobes (male student/teacher)
+│   │   ├── skinning.js         # weight + merge helpers
+│   │   ├── AnimController.js   # clip FSM + the slide BEND + bank/wobble
+│   │   ├── CharacterRig.js     # public rig API
+│   │   └── CharacterFactory.js # studentSpec()/teacherSpec() wardrobes
 │   └── utils/
 │       ├── InputHandler.js     # keyboard + swipe
 │       ├── ObjectPool.js       # generic pooling (report §4.2)
@@ -393,17 +419,24 @@ Browsers without WebGL or import-map support get a friendly fallback screen.
 │       ├── placeholderArt.js   # ALL procedural art (swappable)
 │       └── AssetLoader.js      # optional-file probes + fallbacks
 ├── assets/                     # shipped sprites/audio + drop-in overrides
-│   ├── source-art/             # full-size renders the sprites were cut from
+│   ├── source-art/             # reference art the characters & sprites match
+│   ├── models/rig/             # CC0 kaykit_char skeleton + clips (vendored)
 │   └── scenery/                # school photos, stored for later
 ├── .harness/                   # offline verification rig (dev only, see .harness/README.md)
 ├── scripts/download-assets.sh  # optional CC0 asset fetcher (Phase 1)
-└── research/RESEARCH_REPORT.md # Phase 1 research
+└── research/
+    ├── RESEARCH_REPORT.md      # Phase 1 research
+    ├── CHARACTER_SYSTEM.md     # shipped 3D character design + verification
+    └── screenshots/            # renders from the browser character tests
 ```
 
 ## 📜 Credits
 
 **Built with**
-- [Three.js r160](https://threejs.org) (MIT) — rendering, sprites, instancing
+- [Three.js r160](https://threejs.org) (MIT) — rendering, sprites, instancing, skinning
+- [kaykit_char](https://github.com/sketchpunklabs/kaykit_char) (CC0-1.0) — the
+  humanoid skeleton + run/jump/idle/crouch animation clips used by both characters
+  (upstream: Kay Lousberg, "Character & Animations")
 - [Howler.js 2.2.4](https://howlerjs.com) (MIT) — optional real-file audio
 - Vanilla ES modules — no build tools, no frameworks
 
