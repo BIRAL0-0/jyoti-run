@@ -14,13 +14,6 @@ assets/textures/*.png
 assets/sounds/*.mp3
 assets/models/**/*.glb
 
-# --- committed 3D rig (CC0, fetched by .harness/art/fetch-kaykit-rig.sh) ---
-!assets/models/rig/
-!assets/models/rig/*.glb
-!assets/models/rig/*.gltf
-!assets/models/rig/*.bin
-!assets/models/rig/*.png
-
 # --- committed default art & audio (deliberate whitelist) ---
 !assets/textures/student-character.png
 !assets/textures/student-character-front.png

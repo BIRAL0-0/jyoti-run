@@ -35,7 +35,7 @@ export async function launchBrowser(extraArgs = []) {
 
 /** Open the game and collect every diagnostic channel. */
 export async function openGame(browser, base, opts = {}) {
-  const { query = '?desktop=1&char=sprite', readyTimeout = 120000, viewport = { width: 1280, height: 720 } } = opts;
+  const { query = '?desktop=1', readyTimeout = 120000, viewport = { width: 1280, height: 720 } } = opts;
   const page = await browser.newPage();
   await page.setViewport(viewport);
 

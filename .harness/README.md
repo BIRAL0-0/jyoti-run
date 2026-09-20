@@ -14,7 +14,12 @@ no internet route** to the CDNs the game loads at runtime.
 | `chromedeps/` | generated ABI stubs for `libnspr4`/`libnss3`/`libnssutil3` (see below) |
 | `build-deps.sh` | regenerates `chromedeps/` for the bundled Chromium |
 | `art/prepare-sprites.sh` | turns a source render into a contract-plane sprite |
+| `art/find-ground-crop.mjs` | picks a clean, perspective-matched paver square out of the ground photo (see `README` → "The ground tile") |
+| `art/make-ground-tile.mjs` | that crop → a seamless 1024² tile (wrap cross-fade + seam report) |
+| `art/analyze-tile.mjs` | per-row/per-column statistics on a candidate tile |
+| `art/probe-scenery.mjs` | measures the drop-in scenery renders (aspect, alpha coverage) |
 | `tests/run.mjs` | contract suites: `boot`, `empty`, `views`, `aspect`, `gameplay` |
+| `tests/shot.mjs` | in-game renders (menu / running / chase / turning / stumble) |
 | `tests/soak.mjs` | live-play soak (draw calls, heap, geometry drift, errors) |
 
 ## Running
