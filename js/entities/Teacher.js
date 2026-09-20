@@ -18,9 +18,11 @@
  * and the camera). She spawns just in front of the camera and closes in.
  */
 import * as THREE from 'three';
-import { CONFIG, TEACHER, PLAYER, CAMERA } from '../config.js';
+import { CONFIG, TEACHER, PLAYER, CAMERA, CHARACTER } from '../config.js';
 import { canvasTexture } from '../utils/AssetLoader.js';
 import { generateTeacherFrames, drawShadowBlob } from '../utils/placeholderArt.js';
+import { createCharacter } from '../characters/CharacterRig.js';
+import { teacherSpec } from '../characters/CharacterFactory.js';
 
 export const TeacherState = Object.freeze({
     HIDDEN: 'HIDDEN',
@@ -67,8 +69,11 @@ export class Teacher {
         this.frameTimer = 0;
         this.frameIndex = 0;
         this.multiFrame = false;
+        this._time = 0;
 
         // visuals
+        this.charRig = null;           // 3D teacher (MODE '3d')
+        this.charMode = 'sprite';
         this.sprite = null;
         this.material = null;
         this.frames = null;
@@ -88,7 +93,18 @@ export class Teacher {
      * Build the sprite. `userTexture` (assets/textures/teacher-character.png)
      * overrides the placeholder art.
      */
-    load(userTexture, frontTexture = null) {
+    load(userTexture, frontTexture = null, opts = {}) {
+        this.charMode = opts.charMode === '3d' ? '3d' : 'sprite';
+        if (this.charMode === '3d') {
+            this.charRig = createCharacter(teacherSpec());
+            if (this.charRig) {
+                this.charRig.setVisible(false);
+                this.charRig.setMode('run');
+                this.scene.add(this.charRig.group);
+                return;                       // no sprite/shadow in 3D mode
+            }
+            this.charMode = 'sprite';         // rig unavailable -> fall back
+        }
         if (userTexture) {
             this.frames = { runA: userTexture, runB: userTexture, grab: userTexture };
             this.multiFrame = false;
@@ -156,6 +172,25 @@ export class Teacher {
      * SpriteMaterial.rotation and the turn is foreshortened on X. Her front
      * render is used for the catch pose, where she faces the camera.
      */
+    /** 3D back-end: place + pose the skinned teacher (chase/grab). */
+    _presentRig(deltaTime, playerLaneX, z) {
+        const rig = this.charRig;
+        this._time += deltaTime;
+        rig.setVisible(this.isVisible);
+        rig.setOpacity(this.opacity);
+        // lazy weave toward the player's lane (mirrors the sprite weave)
+        if (this._rigX === undefined) this._rigX = 0;
+        const weave = Math.min(1, TEACHER.WEAVE_LERP * deltaTime);
+        this._rigX += (playerLaneX - this._rigX) * weave;
+        rig.setMode(this.state === TeacherState.CAUGHT ? 'grab' : 'run');
+        rig.setSpeed(0.55);
+        rig.setSlideWeight(0);
+        rig.setWobble(0);
+        rig.setBank(0);
+        rig.update(deltaTime, this._time);
+        rig.group.position.set(this._rigX, 0, z);
+    }
+
     _updateView(deltaTime) {
         const laneOffset = this.sprite.position.x;
         const target = TEACHER.VIEW_TURN * laneOffset;
@@ -207,8 +242,8 @@ export class Teacher {
     _appear() {
         this.state = TeacherState.CHASING;
         this.isVisible = true;
-        this.sprite.visible = true;
-        this.shadow.visible = true;
+        if (this.sprite) this.sprite.visible = true;
+        if (this.shadow) this.shadow.visible = true;
         this.fadeDirection = 1;
         this.fadeTimer = 0;
         this.fadeInDone = false;
@@ -236,13 +271,14 @@ export class Teacher {
         if (this.state === TeacherState.CAUGHT) return;
         this.state = TeacherState.CAUGHT;
         this.isVisible = true;
-        this.sprite.visible = true;
-        this.shadow.visible = true;
+        if (this.sprite) this.sprite.visible = true;
+        if (this.shadow) this.shadow.visible = true;
         this.fadeDirection = 1;
         this.fadeTimer = TEACHER.FADE_DURATION;   // fully opaque
         this.fadeInDone = true;
         this.opacity = 1;
-        this.material.opacity = 1;
+        if (this.material) this.material.opacity = 1;
+        if (this.charRig) { this.charRig.setMode('grab'); this.charRig.setVisible(true); this.charRig.setOpacity(1); }
         this._emit('caught');
     }
 
@@ -300,7 +336,7 @@ export class Teacher {
             this.fadeTimer += deltaTime;
             const fadeProgress = Math.min(this.fadeTimer / TEACHER.FADE_DURATION, 1);
             this.opacity = this.fadeDirection === 1 ? fadeProgress : 1 - fadeProgress;
-            this.material.opacity = this.opacity;
+            if (this.material) this.material.opacity = this.opacity;
             if (fadeProgress >= 1) {
                 if (this.fadeDirection === 1) {
                     this.fadeInDone = true;
@@ -357,6 +393,9 @@ export class Teacher {
 
         // ---- presentation ----
         const z = this.distanceFromPlayer;          // player is at z = 0
+        if (this.charRig) {
+            this._presentRig(deltaTime, playerLaneX, z);
+        } else {
         this.sprite.position.z = z;
 
         // lazy weave toward the player's lane (report §4.4)
@@ -398,6 +437,7 @@ export class Teacher {
         this.shadow.position.z = z;
         this.shadow.material.opacity = 0.8 * this.opacity;
         this.shadow.scale.setScalar(1 - 0.3 * Math.min(1, this.distanceFromPlayer / 10));
+        }   // end sprite presentation
 
         // ---- emit the game-over event once the grab lands ----
         if (this.state === TeacherState.CAUGHT
@@ -445,6 +485,13 @@ export class Teacher {
         this.distanceFromPlayer = this.spawnDistance;
         this.targetDistance = TEACHER.MENACE_DISTANCE;
         this.viewYaw = 0;
+        this._rigX = 0;
+        if (this.charRig) {
+            this.charRig.setVisible(false);
+            this.charRig.setOpacity(0);
+            this.charRig.setMode('run');
+            this.charRig.group.position.set(0, 0, this.spawnDistance);
+        }
         if (this.material) this.material.rotation = 0;
         if (this.sprite) {
             this.sprite.rotation.y = 0;
@@ -469,8 +516,9 @@ export class Teacher {
         this.state = TeacherState.HIDDEN;
         this.isVisible = false;
         this.opacity = 0;
-        this.sprite.visible = false;
-        this.shadow.visible = false;
+        if (this.sprite) this.sprite.visible = false;
+        if (this.shadow) this.shadow.visible = false;
+        if (this.charRig) this.charRig.setVisible(false);
     }
 
     _emit(type) {

@@ -21,7 +21,7 @@ const browser = await launchBrowser();
 let g;
 const samples = [];
 try {
-  g = await openGame(browser, srv.base, { query: MOBILE ? '?mobile=1' : '?desktop=1' });
+  g = await openGame(browser, srv.base, { query: MOBILE ? '?mobile=1&char=sprite' : '?desktop=1&char=sprite' });
   await g.page.evaluate(() => window.__game.startGame());
 
   const t0 = Date.now();
