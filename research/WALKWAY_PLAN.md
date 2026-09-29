@@ -315,3 +315,45 @@ Nothing under `js/main.js`, `js/entities/`, `js/managers/`, `index.html`,
 `css/`, `assets/scenery/`, `assets/sounds/` or the character sprites appears:
 gameplay, camera, HUD, obstacles, scoring, teacher chase and the starting
 gate are untouched, and the walkway is still one instanced surface.
+
+---
+
+## PR 3 — interlocking zigzag + red lane stripes (as built)
+
+Owner verdict after PR #10: block size (0.25 m × 0.5 m) is correct and stays;
+the *pattern* must match the original pavement — a regular interlocking
+zigzag across the whole walkway, and red blocks forming the lane lines.
+Only the tile's drawn pattern changed (generator, fallback, analyser, W4b,
+docs); config values, file names, repeat [1,2], quantisation unchanged.
+
+**Geometry.** 32×64 px cells, 48 columns × 20 courses. Column k is shifted
+along travel by (k mod 2)·32 px. Each column's left joint is a square wave:
++6 px for ly ∈ [16,48), 0 in the outer quarters; corners ly ∈ [16,18) ∪
+[46,48), lx < 8. Horizontal joints straight, 2 px. Tab pixels take the owning
+(left-neighbour) block's colour. The pattern is shifted 1 px in y so the
+course joints straddle the y wrap like every interior joint.
+
+**Lane lines.** Column lattice offset +16 px ⇒ columns 15/31 are centred at
+4 m / 8 m from the tile edge = world x −2 m / +2 m (dividers of lanes
+−4/0/4). Those columns are red on every course: RGB (244,188,180),
+L ≈ 199 (luminance-matched), saturation ≈ 0.26.
+
+**Grout.** Warm tan jointing sand RGB (196,178,148), 2 px, ±4 % speckle.
+
+**Measured (analyze-walkway-tile.mjs):**
+
+| Check | Result |
+|---|---|
+| T1 seam ratio col / row | 0.892 / 0.832 |
+| T2 module | 32 px across, 64 px along (single-column profile) |
+| T2b adjacent-column phase | 32.00 px |
+| T3 families (non-red columns) | gray 41.3 % / beige 33.2 % / pink 30.1 % |
+| T3b red lane columns | 40 / 40 faces red |
+| T4 max saturation / blue / yellow | 0.289 / 0 / 0 |
+| T5 aperiodic 16 px / 32 px | 2.69 % / 1.82 % (phase period now 64×64 px) |
+| T6 joint contrast (zigzag mask) | 20.2 |
+
+**Browser suites:** boot 27, empty 6, views 10, aspect 9, gameplay 20,
+walkway 10 — all green; soak PASS. W4b now predicts course lines every
+0.25 m (both column phases), dip threshold 0.6·σ, majority spacing match:
+17 lines matched ±3 px.

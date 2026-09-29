@@ -953,8 +953,10 @@ async function suiteWalkway(browser) {
       // the resolvable near field is camera-side of the player (z > 0):
       // the ring's first plane spans z ∈ [0, 20]
       const ys = [];
-      for (let k = 0; k <= 44; k++) {
-        const v = new V(0, 0, 0.5 * k).project(cam);
+      // PR 3: neighbouring columns are staggered half a block, so course
+      // lines (each jointing half the columns) fall every 0.25 m of world z
+      for (let k = 0; k <= 88; k++) {
+        const v = new V(0, 0, 0.25 * k).project(cam);
         ys.push((-v.y * 0.5 + 0.5) * innerHeight);
       }
       return ys;
@@ -988,7 +990,7 @@ async function suiteWalkway(browser) {
       let sd = 0; for (let i = 0; i < nRows; i++) sd += rowL[i] * rowL[i]; sd = Math.sqrt(sd / nRows);
       const dipRows = [];
       for (let i = 1; i < nRows - 1; i++) {
-        if (rowL[i] < -sd && rowL[i] <= rowL[i - 1] && rowL[i] <= rowL[i + 1]) dipRows.push(y0b + i);
+        if (rowL[i] < -0.6 * sd && rowL[i] <= rowL[i - 1] && rowL[i] <= rowL[i + 1]) dipRows.push(y0b + i);
       }
       const merged = [];
       for (const y of dipRows) {
@@ -1011,8 +1013,10 @@ async function suiteWalkway(browser) {
         const mSp = [], eSp = [];
         for (let i = 1; i < merged.length; i++) mSp.push(merged[i] - merged[i - 1]);
         for (let i = bj + 1; i < Math.min(pred.length, bj + merged.length); i++) eSp.push(pred[i] - pred[i - 1]);
-        ratioOk = mSp.length >= 3 && eSp.length >= 3
-          && mSp.slice(0, eSp.length).every((v, i) => Math.abs(v - eSp[i]) / eSp[i] < 0.2);
+        // majority of consecutive dip spacings follow the projected fan
+        // (half-jointed lines can drop out near the resolution limit)
+        const ok = mSp.slice(0, eSp.length).filter((v, i) => Math.abs(v - eSp[i]) / eSp[i] < 0.2).length;
+        ratioOk = mSp.length >= 3 && eSp.length >= 3 && ok >= 0.6 * Math.min(mSp.length, eSp.length);
       }
       // projected 0.5 m course spacing at 20 m ahead (informational: the
       // horizon scale itself is pinned by the exact module math, W2/W4a)

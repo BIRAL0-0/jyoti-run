@@ -383,12 +383,12 @@ function drawTeacherFace(ctx, cx, cy, { shocked = false } = {}) {
 // 12 m × 10 m, exactly the committed tile's footprint: TILE_WIDTH ×
 // TILE_LENGTH / TEXTURE_REPEAT_Y). Same module arithmetic, same colour
 // families and same thin joints as .harness/art/make-walkway-tile.mjs
-// (research/WALKWAY_PLAN.md §3.3): 0.25 m × 0.5 m rectangular blocks in a
-// staggered running bond, 2 px jointing-sand lines, luminance-matched
-// gray/beige/pink families with per-block chroma jitter and fine aggregate
-// speckle. A pedestrian campus walkway — no vehicle lanes, no lane dashes,
-// no curb strips. Seamless by construction (wrapped lattice coordinates,
-// seeded per-block colour), and the fallback surface is the same surface.
+// (research/WALKWAY_PLAN.md §3.3, PR 3): 0.25 m × 0.5 m interlocking "I"
+// pavers — square-wave (±6 px) zigzag joints, adjacent columns staggered
+// half a block along travel, red paver columns on the lane lines x = ±2 m,
+// warm tan jointing sand, gray/beige/pink mix with per-block chroma jitter.
+// No painted lane dashes, no curb strips. Seamless by construction (wrapped
+// lattice coordinates, seeded per-block colour); fallback = same surface.
 // ---------------------------------------------------------------------------
 export function drawGroundTexture() {
     const PXM = 128;
@@ -412,35 +412,62 @@ export function drawGroundTexture() {
         pink: [223, 194, 191],
     };
     const ORDER = ['gray', 'gray', 'beige', 'beige', 'pink'];   // 40/40/20 mix
-    const GROUT = [174, 174, 170];
+    const GROUT = [196, 178, 148];                      // warm tan jointing sand
+    const RED = [244, 188, 180];                        // lane-line pavers (L ≈ 199)
+    const BAND = 16, COLS = W / BW;                     // lattice shift → red cols at x = ±2 m
+    // --------------------------------------------- interlocking zigzag lattice
+    // Column lattice shifted +16 px (BAND) so red columns 15/31 are centred on
+    // the lane dividers x = ±2 m. Adjacent columns stagger by half a block (32 px)
+    // along travel. The left joint of every column is a square wave: offset +6 px
+    // in the middle half of that column's block (ly ∈ [16,48)), 0 in the outer
+    // quarters; square-wave corners at ly ∈ [16,18) ∪ [46,48), lx < 8.
+    // Returns { joint, k, r, lx, ly } of the OWNING block (tab pixels → k−1).
+    function pavCell(x, y) {
+        y += 1;   // joint rows straddle the y wrap
+        const ux = ((x - BAND) % W + W) % W;
+        const k = ux >> 5, lx = ux & 31;
+        const yy = ((y - (k & 1) * 32) % H + H) % H;
+        const ly = yy & 63;
+        const mid = ly >= 16 && ly < 48;
+        const kn = (k + 1) % COLS;
+        const lyN = (((y - (kn & 1) * 32) % H + H) % H) & 63;
+        const midN = lyN >= 16 && lyN < 48;
+        if ((ly >= 16 && ly < 18) || (ly >= 46 && ly < 48)) { if (lx < 8) return { joint: true }; }
+        if (!mid && lx === 0) return { joint: true };
+        if (mid && (lx === 5 || lx === 6)) return { joint: true };
+        if (!midN && lx === 31) return { joint: true };
+        let ko = k, olx = lx;
+        if (mid && lx < 5) { ko = (k + COLS - 1) % COLS; olx = lx + 32; }
+        const yo = ((y - (ko & 1) * 32) % H + H) % H;
+        const oly = yo & 63;
+        if (oly < 2) return { joint: true };
+        return { joint: false, k: ko, r: yo >> 6, lx: olx, ly: oly };
+    }
+
 
     for (let y = 0; y < H; y++) {
-        const r = (y / BL) | 0;
-        const ly = y % BL;
-        const off = (r % 2) * (BW / 2);              // running-bond stagger
         for (let x = 0; x < W; x++) {
-            const ux = (x - off + 2 * W) % W;        // wrapped lattice coord
-            const k = (ux / BW) | 0;
-            const lx = ux % BW;
             const i = (y * W + x) * 4;
             const speck = 1 + (hash2(x, y, 77) - 0.5) * 0.08;   // ±4 %
-            if (lx === 0 || lx === BW - 1 || ly === 0 || ly === BL - 1) {
+            const cell = pavCell(x, y);
+            if (cell.joint) {
                 d[i] = GROUT[0] * speck;
                 d[i + 1] = GROUT[1] * speck;
                 d[i + 2] = GROUT[2] * speck;
             } else {
+                const { k, r, lx, ly } = cell;
                 const dith = hash2(k, r, 11) < 0.5 ? 0 : 1;
-                const fam = ORDER[(((k + 2 * r + dith) % 5) + 5) % 5];
-                const base = FAMILY[fam];
+                const base = (k === 15 || k === 31) ? RED
+                    : FAMILY[ORDER[(((k + 2 * r + dith) % 5) + 5) % 5]];
                 const jl = 1 + (hash2(k, r, 21) - 0.5) * 0.016;  // lightness ±0.8 %
                 const j0 = 1 + (hash2(k, r, 31) - 0.5) * 0.04;   // chroma ±2 %
                 const j1 = 1 + (hash2(k, r, 32) - 0.5) * 0.04;
                 const j2 = 1 + (hash2(k, r, 33) - 0.5) * 0.04;
-                const bx = (lx - 1) / (BW - 3);
-                const by = (ly - 1) / (BL - 3);
+                const bx = Math.min(1, (lx - 1) / (BW - 3));
+                const by = (ly - 2) / (BL - 3);
                 let shade = 1 + (0.5 - (bx + by) / 2) * 0.03;    // TL→BR sun ramp
-                if (lx === 1 || ly === 1) shade *= 1.02;         // chamfer lit
-                else if (lx === BW - 2 || ly === BL - 2) shade *= 0.98;
+                if (lx === 1 || ly === 2) shade *= 1.02;         // chamfer lit
+                else if (lx === BW - 2 || ly === BL - 1) shade *= 0.98;
                 const f = shade * jl * speck;
                 d[i] = base[0] * f * j0;
                 d[i + 1] = base[1] * f * j1;

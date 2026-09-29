@@ -122,9 +122,10 @@ assets/textures/
 
 **The ground tile.** `assets/textures/ground-gravel.png` is one continuous
 tiled campus walkway: a purpose-built 1536×1280 seamless tile of interlocking
-rectangular concrete paving blocks in a staggered running bond — light gray,
-beige and subtle reddish-pink blocks with per-block variation, thin 2 px grout
-lines, clean and well maintained. It is synthesized (not cropped from a photo)
+"I"-shaped concrete pavers laid in a regular zigzag (square-wave joints) across
+the whole walkway — light gray, beige and subtle reddish-pink blocks with
+per-block variation, two continuous columns of red pavers marking the lane
+lines at x = ±2 m, thin 2 px warm-tan jointing-sand lines, clean and well maintained. It is synthesized (not cropped from a photo)
 by `.harness/art/make-walkway-tile.mjs`, so it carries no baked shadows,
 stains, moss or patches — nothing with a unique location that could reveal the
 repeat. The design and the verification are specified in
@@ -133,7 +134,9 @@ repeat. The design and the verification are specified in
 Module arithmetic: the image is 12 m × 10 m at 128 px/m — exactly the ground
 plane's texture footprint (`TILE_WIDTH` × `TILE_LENGTH / TEXTURE_REPEAT_Y`).
 Blocks are 0.25 m × 0.50 m (32×64 px): 48 per course, 20 courses per period,
-alternating courses shifted half a block. 48 and 20 are whole numbers and 20 is
+adjacent columns shifted half a block (32 px) along travel, each vertical joint
+a ±6 px square wave in the middle half of the block; the column lattice is
+offset 16 px so red columns 15 and 31 are centred on the lane dividers. 48 and 20 are whole numbers and 20 is
 even, so the pattern closes seamlessly in both axes; and the 20 m ring period
 is exactly two pattern periods, so instance boundaries always land on pattern
 boundaries — the 20 ground planes read as one continuous surface.
@@ -142,12 +145,12 @@ Verification (`node art/analyze-walkway-tile.mjs ../assets/textures/ground-grave
 
 | Check | Result |
 |---|---|
-| wrap seam ÷ interior neighbour difference | **×0.82 / ×0.87** (≤ 1.0 ⇒ repeat invisible) |
-| block module (autocorrelation) | 32 px across, 64 px along, 16 px running-bond phase |
-| family mix (gray / beige / pink) | 40 % / 32 % / 28 % (each ≥ 8 %) |
-| max saturation / blue-dominant pixels | 0.18 / none (no markings, no curbs) |
-| aperiodic structure (stain detector) | ≤ 3.2 % at 16 px cells, ≤ 2.5 % at 32 px |
-| joint contrast | ≈ 13/255 over 2 px (thin, readable grout) |
+| wrap seam ÷ interior neighbour difference | **×0.89 / ×0.83** (≤ 1.0 ⇒ repeat invisible) |
+| block module (autocorrelation) | 32 px across, 64 px along, 32 px adjacent-column phase |
+| family mix (gray / beige / pink) | 41 % / 33 % / 30 % (each ≥ 8 %); red lane columns 40/40 faces |
+| max saturation / blue-dominant pixels | 0.29 / none (no painted markings, no curbs) |
+| aperiodic structure (stain detector) | 2.69 % at 16 px cells, 1.82 % at 32 px |
+| joint contrast | ≈ 20/255 over 2 px (warm-tan jointing sand) |
 
 The old photo-crop pipeline (`make-ground-tile.mjs` + `find-ground-crop.mjs`)
 is kept for reference on `assets/source-art/ground-gravel-source.png`.
