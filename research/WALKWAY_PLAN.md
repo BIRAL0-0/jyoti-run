@@ -208,3 +208,110 @@ New `walkway` suite in `.harness/tests/run.mjs`:
 Starting gate, sky, clouds, fog, lighting rig, camera, HUD, sprites, audio,
 obstacles, collectibles, difficulty curve, teacher chase, pause/mute, storage,
 deployment — untouched, and proven untouched by the scope guard in §5.3.
+
+---
+
+# PR 2 — as-built + verification report
+
+Implemented exactly per §4 (scope guard below). The committed tile was
+regenerated with `node .harness/art/make-walkway-tile.mjs` and analysed with
+`node .harness/art/analyze-walkway-tile.mjs`; the game-level checks are the
+`walkway` suite in `.harness/tests/run.mjs` (W1–W7). Everything else in the
+game is byte-identical.
+
+## A. Tile level (T1–T6, measured on the committed PNG)
+
+| # | Check | Threshold | Measured | |
+|---|---|---|---|---|
+| T1 | wrap seam ÷ interior neighbour diff | ≤ 1.0 | **0.82 / 0.87** | ✅ |
+| T2 | block module by autocorrelation | 32 px across / 64 px along | **32 (v 0.91) / 64 (v 0.95)**, running-bond phase **16.00 px** | ✅ |
+| T3 | gray / beige / pink each ≥ 8 % | ≥ 8 % | **40.0 / 32.4 / 27.6** | ✅ |
+| T4 | max saturation; blue-dominant / vivid-yellow px | ≤ 0.35; 0 | **0.18; 0 / 0** | ✅ |
+| T5 | no aperiodic structure, 16× downsample | ≤ 4 % | **3.19 %** (raw lattice grain 3.85 %) | ✅ |
+| T5b| (stricter guard) 32 px cells | ≤ 2.5 % | **2.44 %** | ✅ |
+| T6 | joint contrast band | 8–45 | **13.5** over 2 px | ✅ |
+
+The old photo tile scored 0.70/0.69 on T1; the synthetic tile's 0.82/0.87 is
+likewise below 1.0 (the seam is quieter than the tile's own interior pairs —
+the absolute wrap delta is ≈1/255). The photo's lower ratio came from its
+noisy interior, not a better seam.
+
+## B. Game level (W1–W7, `walkway` suite, real browser + SwiftShader)
+
+| # | Check | Result |
+|---|---|---|
+| W1 | surface = committed 1536×1280 tile, RepeatWrapping, repeat [1,2] | ✅ `1536×1280 repeat 1×2 wrap true` |
+| W2 | lattice proof: `TILE_LENGTH ÷ (footprint/repeat.y) == 2.00` | ✅ exactly 2 |
+| W3 | scanlines feet→vanishing point contain no grass/sky/black pixel | ✅ 5 columns, 493 rows clean |
+| W4 | block scale: square texels 128 px/m both axes; rendered course lines follow the perspective ratio | ✅ 128/128; 9 course lines matched ±3 px, spacing ratios < 20 % |
+| W5 | near-field pavement: zero blue-dominant / vivid-yellow pixels | ✅ 0 in 24 480 |
+| W6 | gate/scenery absent by default; campus bands (border, railing, hedge, veranda, colonnade, 2 buildings) unchanged | ✅ |
+| W7 | one InstancedMesh ×20, one material, one texture; draw calls in budget | ✅ 20 calls at start |
+| §3.3 | fallback = same walkway module grid (1536×1280), no lane dashes / curbs | ✅ markings 0/24 640 |
+
+W4 note: at 720p a 0.25 m module at 20 m projects to ≈1.1 px — below
+resolvable detail — so the horizon scale is pinned by the exact module math
+(W2/W4a: integer lattice, square texels), while the rendered check verifies
+the resolvable near/mid field against the camera's own projection.
+
+## C. Regression + evidence
+
+* `node tests/run.mjs` — **boot 27/27, empty 6/6, views 10/10, aspect 9/9,
+  gameplay 20/20, walkway 10/10** (82 checks; the only pre-existing check
+  touched is the boot-suite tile dimension expectation, now 1536×1280).
+* `node tests/soak.mjs 1` — PASS: max 50 draw calls (budget 100), heap growth
+  0.0 MB, 0 JS/console errors, teacher FSM live.
+* `node tests/shot.mjs` — menu / running / chase / turning / stumble renders
+  inspected visually: one continuous paver walkway to the vanishing point,
+  consistent block scale, framing and characters untouched.
+
+## D. Documented design decisions (deviations from the §3 sketch, all measured)
+
+1. **Stagger is a half block (16 px).** The sketch's "(r mod 2) × 0.25 m"
+   offset would be a whole-block shift (a stack bond in disguise); "every
+   block bridged by the two above/below" requires 0.125 m. T2b measures the
+   phase at exactly 16.00 px, and the 20-course even count keeps the wrap
+   seamless.
+2. **Families are luminance-matched; per-block variation is chroma.**
+   ±6 % lightness jitter cannot coexist with T5's ±4 % 16-px-cell flatness —
+   a stain detector that size sees half-block cells. The families share
+   L ≈ 200 and differ in hue (gray neutral, beige yellow-leaning, pink
+   red-leaning), with ±0.8 % lightness + ±2 % chroma per-block jitter — the
+   visual language of real paver mixes, and T3/T4 confirm the mix reads.
+3. **Grout sits slightly darker than the block field** ((174,174,170) vs
+   face ≈200) instead of "lighter/cooler": against the light gray family a
+   lighter sand would vanish. Measured contrast 13.5 keeps inside the 8–45
+   band and the joints read as thin clean lines on every family.
+4. **T5 measures the aperiodic component.** A periodic lattice must not trip
+   a stain detector: 16-px cells straddling joint lines are darker by
+   construction, uniformly everywhere. The analyser therefore compares each
+   downsampled cell against the expectation for its lattice phase (raw grain
+   is reported alongside for transparency). Any baked shadow/patch would
+   appear as a phase-deviation; the committed tile shows ≤3.19 %.
+5. **The fallback canvas is 1536×1280**, not the legacy `TEXTURE_SIZE: 512`
+   (a 512² canvas cannot host the 0.25 m module at the 12 m footprint with
+   integer pixels). The value stays 512 — §4 forbids value changes — and is
+   commented as legacy in `js/config.js`; `drawGroundTexture()` documents its
+   own dimensions.
+
+## E. Scope guard (printed verbatim)
+
+```
+$ git diff --name-only main
+.harness/tests/run.mjs
+README.md
+assets/textures/ground-gravel.png
+js/config.js
+js/utils/placeholderArt.js
+research/WALKWAY_PLAN.md
+$ git ls-files --others --exclude-standard
+.harness/art/analyze-walkway-tile.mjs
+.harness/art/make-walkway-tile.mjs
+```
+
+Eight paths — exactly the §4 allowlist. `js/config.js` is comments-only (the
+single touched line keeps `TEXTURE_SIZE: 512` unchanged, adding a comment).
+Nothing under `js/main.js`, `js/entities/`, `js/managers/`, `index.html`,
+`css/`, `assets/scenery/`, `assets/sounds/` or the character sprites appears:
+gameplay, camera, HUD, obstacles, scoring, teacher chase and the starting
+gate are untouched, and the walkway is still one instanced surface.

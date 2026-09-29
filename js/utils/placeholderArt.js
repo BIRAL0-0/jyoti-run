@@ -379,77 +379,77 @@ function drawTeacherFace(ctx, cx, cy, { shocked = false } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// GROUND — seamless gravel + paving + baked lane dividers, 512×512 (POT)
-// Texture maps a 12×10 u area (TILE_WIDTH × TILE_LENGTH / TEXTURE_REPEAT_Y).
+// GROUND — one continuous concrete-paver walkway, 1536×1280 (128 px/m ⇒
+// 12 m × 10 m, exactly the committed tile's footprint: TILE_WIDTH ×
+// TILE_LENGTH / TEXTURE_REPEAT_Y). Same module arithmetic, same colour
+// families and same thin joints as .harness/art/make-walkway-tile.mjs
+// (research/WALKWAY_PLAN.md §3.3): 0.25 m × 0.5 m rectangular blocks in a
+// staggered running bond, 2 px jointing-sand lines, luminance-matched
+// gray/beige/pink families with per-block chroma jitter and fine aggregate
+// speckle. A pedestrian campus walkway — no vehicle lanes, no lane dashes,
+// no curb strips. Seamless by construction (wrapped lattice coordinates,
+// seeded per-block colour), and the fallback surface is the same surface.
 // ---------------------------------------------------------------------------
 export function drawGroundTexture() {
-    const { canvas, ctx } = makeCanvas(512, 512);
-    const px = 512 / 12; // pixels per world unit (x)
+    const PXM = 128;
+    const W = 12 * PXM;                 // 1536
+    const H = 10 * PXM;                 // 1280
+    const BW = Math.round(0.25 * PXM);  // 32 px block width
+    const BL = Math.round(0.50 * PXM);  // 64 px block length
+    const { canvas, ctx } = makeCanvas(W, H);
+    const img = ctx.createImageData(W, H);
+    const d = img.data;
 
-    // base warm gravel
-    ctx.fillStyle = '#d8cdb8';
-    ctx.fillRect(0, 0, 512, 512);
+    // same seeded hash as the offline generator (deterministic fallback)
+    const hash2 = (x, y, seed = 0) => {
+        let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 974711)) | 0;
+        h = Math.imul(h ^ (h >>> 13), 1274126177);
+        return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+    };
+    const FAMILY = {
+        gray: [201, 200, 198],
+        beige: [209, 200, 184],
+        pink: [223, 194, 191],
+    };
+    const ORDER = ['gray', 'gray', 'beige', 'beige', 'pink'];   // 40/40/20 mix
+    const GROUT = [174, 174, 170];
 
-    // subtle paving joints (tiles every 128 px = 2.5 u)
-    ctx.strokeStyle = 'rgba(120, 104, 82, 0.18)';
-    ctx.lineWidth = 3;
-    for (let i = 0; i <= 4; i++) {
-        ctx.beginPath(); ctx.moveTo(0, i * 128); ctx.lineTo(512, i * 128); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(i * 128, 0); ctx.lineTo(i * 128, 512); ctx.stroke();
-    }
-
-    // speckle noise
-    let seed = 1337;
-    const rand = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
-    for (let i = 0; i < 1600; i++) {
-        const x = rand() * 512, y = rand() * 512;
-        const shade = rand();
-        ctx.fillStyle = shade < 0.5
-            ? `rgba(120, 104, 82, ${0.05 + rand() * 0.12})`
-            : `rgba(245, 238, 220, ${0.05 + rand() * 0.12})`;
-        const s = 1 + rand() * 2.4;
-        ctx.fillRect(x, y, s, s);
-    }
-    // rounded pebbles
-    for (let i = 0; i < 46; i++) {
-        const x = rand() * 512, y = rand() * 512, r = 2.5 + rand() * 5;
-        const tone = rand();
-        const fill = tone < 0.4 ? '#c4b49a' : tone < 0.75 ? '#bda887' : '#e8dfca';
-        ctx.beginPath();
-        ctx.ellipse(x, y, r, r * 0.78, rand() * Math.PI, 0, Math.PI * 2);
-        ctx.fillStyle = fill; ctx.fill();
-        ctx.strokeStyle = 'rgba(110, 95, 75, 0.35)'; ctx.lineWidth = 1.4; ctx.stroke();
-    }
-
-    // lane divider dashed lines at x = ±2 u (avoid the paving joints' look)
-    const dashes = [64, 64]; // dash, gap — 4 seamless periods per texture
-    for (const ux of [-2, 2]) {
-        const x = (ux + 6) * px;
-        let y = 0, k = 0;
-        while (y < 512) {
-            const seg = dashes[k % 2];
-            if (k % 2 === 0) {
-                ctx.fillStyle = 'rgba(255, 215, 0, 0.85)';
-                rr(ctx, x - 4, y + 2, 8, seg - 4, 4); ctx.fill();
-                ctx.strokeStyle = 'rgba(120, 100, 40, 0.4)'; ctx.lineWidth = 1.5;
-                rr(ctx, x - 4, y + 2, 8, seg - 4, 4); ctx.stroke();
+    for (let y = 0; y < H; y++) {
+        const r = (y / BL) | 0;
+        const ly = y % BL;
+        const off = (r % 2) * (BW / 2);              // running-bond stagger
+        for (let x = 0; x < W; x++) {
+            const ux = (x - off + 2 * W) % W;        // wrapped lattice coord
+            const k = (ux / BW) | 0;
+            const lx = ux % BW;
+            const i = (y * W + x) * 4;
+            const speck = 1 + (hash2(x, y, 77) - 0.5) * 0.08;   // ±4 %
+            if (lx === 0 || lx === BW - 1 || ly === 0 || ly === BL - 1) {
+                d[i] = GROUT[0] * speck;
+                d[i + 1] = GROUT[1] * speck;
+                d[i + 2] = GROUT[2] * speck;
+            } else {
+                const dith = hash2(k, r, 11) < 0.5 ? 0 : 1;
+                const fam = ORDER[(((k + 2 * r + dith) % 5) + 5) % 5];
+                const base = FAMILY[fam];
+                const jl = 1 + (hash2(k, r, 21) - 0.5) * 0.016;  // lightness ±0.8 %
+                const j0 = 1 + (hash2(k, r, 31) - 0.5) * 0.04;   // chroma ±2 %
+                const j1 = 1 + (hash2(k, r, 32) - 0.5) * 0.04;
+                const j2 = 1 + (hash2(k, r, 33) - 0.5) * 0.04;
+                const bx = (lx - 1) / (BW - 3);
+                const by = (ly - 1) / (BL - 3);
+                let shade = 1 + (0.5 - (bx + by) / 2) * 0.03;    // TL→BR sun ramp
+                if (lx === 1 || ly === 1) shade *= 1.02;         // chamfer lit
+                else if (lx === BW - 2 || ly === BL - 2) shade *= 0.98;
+                const f = shade * jl * speck;
+                d[i] = base[0] * f * j0;
+                d[i + 1] = base[1] * f * j1;
+                d[i + 2] = base[2] * f * j2;
             }
-            y += seg; k++;
+            d[i + 3] = 255;
         }
     }
-
-    // royal-blue track edging (~0.5 u each side) with a white inner line
-    const edge = 22;
-    ctx.fillStyle = '#4169e1';
-    ctx.fillRect(0, 0, edge, 512);
-    ctx.fillRect(512 - edge, 0, edge, 512);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fillRect(edge, 0, 4, 512);
-    ctx.fillRect(512 - edge - 4, 0, 4, 512);
-    // subtle darker top band for depth
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.10)';
-    ctx.fillRect(0, 0, edge, 6); ctx.fillRect(512 - edge, 0, edge, 6);
-
+    ctx.putImageData(img, 0, 0);
     return canvas;
 }
 

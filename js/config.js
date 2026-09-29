@@ -19,9 +19,16 @@ export const CONFIG = {
         INITIAL_SPEED: 15,            // Starting movement speed (units/s)
         MAX_SPEED: 45,                // Maximum speed cap
         SPEED_INCREMENT: 0.5,         // Speed increase per second
-        // Procedural fallback gravel texture (used when the user's
-        // ground-gravel.png is absent)
-        TEXTURE_SIZE: 512,
+        // The walkway surface (assets/textures/ground-gravel.png) is ONE
+        // continuous tiled paver walkway: 1536×1280 px = 12 m × 10 m at
+        // 128 px/m, i.e. exactly this plane's footprint with repeat
+        // [1, TEXTURE_REPEAT_Y]. Paver module 0.25 m × 0.5 m (32×64 px),
+        // staggered running bond, 20 courses per 10 m — so the 20 m ring
+        // period is exactly two pattern periods and instance boundaries
+        // always land on pattern boundaries (research/WALKWAY_PLAN.md §3).
+        // The procedural fallback draws the same surface.
+        TEXTURE_SIZE: 512,            // legacy POT canvas size (fallback now draws
+                                      // the committed tile's exact 1536×1280 grid)
         TEXTURE_REPEAT_Y: 2,          // texture tiles per tile along Z
         CURB_WIDTH: 0.6,              // blue curb strips at the track edge
         CURB_HEIGHT: 0.3,

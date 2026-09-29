@@ -1,7 +1,7 @@
 /**
  * run.mjs — School Runner contract suites (offline harness).
  *
- *   node run.mjs [suite ...]   suites: boot empty views aspect gameplay
+ *   node run.mjs [suite ...]   suites: boot empty views aspect gameplay walkway
  *
  * Drives the real game in a real browser (SwiftShader WebGL) and checks the
  * non-negotiable contract: assets, fallbacks, aspect handling, pseudo-3D views,
@@ -9,6 +9,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { PNG } from 'pngjs';
 import { createServer } from '../server.mjs';
 import { launchBrowser, openGame, waitFor } from '../browser.mjs';
 import { Report, section, pixelStats, jaccard } from './lib.mjs';
@@ -195,11 +196,11 @@ async function suiteBoot(browser) {
       info.teacher.userArt && info.teacher.front
       && Math.abs(info.teacher.scale[0] - 2) < 0.01 && Math.abs(info.teacher.scale[1] - 3) < 0.01,
       `plane ${info.teacher.scale.join('×')}, image ${info.teacher.img.join('×')}, aspect ${info.teacher.aspect.toFixed(3)}`);
-    rep.check('ground uses the committed 1024² gravel tile, not the placeholder',
+    rep.check('ground uses the committed 1536×1280 paver tile, not the placeholder',
       info.ground === false && !!info.groundTex
-      && info.groundTex.img[0] === 1024 && info.groundTex.img[1] === 1024,
+      && info.groundTex.img[0] === 1536 && info.groundTex.img[1] === 1280,
       info.groundTex ? `${info.groundTex.img.join('×')}` : 'no texture');
-    rep.check('gravel tile wraps + repeats through GROUND.TEXTURE_REPEAT_Y',
+    rep.check('paver tile wraps + repeats through GROUND.TEXTURE_REPEAT_Y',
       !!info.groundTex && info.groundTex.wrapping
       && info.groundTex.repeat[0] === 1
       && info.groundTex.repeat[1] === info.groundRepeatY,
@@ -801,6 +802,298 @@ async function suiteGameplay(browser) {
 }
 
 // ---------------------------------------------------------------------------
+// 6. one continuous tiled walkway (research/WALKWAY_PLAN.md §5.2, W1–W7)
+// ---------------------------------------------------------------------------
+/** Pixel classifiers shared by the walkway render checks. */
+const fogRGB = [207, 230, 245];                    // LIGHTING.FOG.color == SKY.GRADIENT.HORIZON
+const nearFog = (r, g, b) => Math.abs(r - fogRGB[0]) <= 30 && Math.abs(g - fogRGB[1]) <= 30 && Math.abs(b - fogRGB[2]) <= 30;
+const isGrass = (r, g, b) => g > r + 12 && g > b + 12;
+const isSky = (r, g, b) => b > r + 30 && !nearFog(r, g, b);
+const isBlack = (r, g, b) => r + g + b < 60;
+const isBlue = (r, g, b) => b > r + 15 && b > g + 5;
+const isVividYellow = (r, g, b) => r > 200 && g > 180 && b < 120;
+
+/** Decode a screenshot and pull one scan row / rect of RGB triplets. */
+function shotPixels(buf) {
+  const png = PNG.sync.read(Buffer.from(buf));
+  return {
+    w: png.width, h: png.height, d: png.data,
+    at: (x, y) => {
+      const i = (y * png.width + x) * 4;
+      return [png.data[i], png.data[i + 1], png.data[i + 2]];
+    },
+  };
+}
+
+async function suiteWalkway(browser) {
+  section('Suite 6 — one continuous tiled walkway (WALKWAY_PLAN §5.2)');
+  const rep = new Report('walkway');
+  const srv = await createServer(ROOT);
+  let g;
+  try {
+    g = await openGame(browser, srv.base);
+    const page = g.page;
+
+    // ---- W1/W2/W4-aspect/W6/W7: scene-graph facts -------------------------
+    const t = await page.evaluate(() => {
+      const G = window.__game;
+      const mesh = G.ground.tileMesh;
+      const tex = mesh.material.map;
+      const cfg = G.config.GROUND;
+      const footX = cfg.TILE_WIDTH / tex.repeat.x;     // texture footprint across
+      const footZ = cfg.TILE_LENGTH / tex.repeat.y;    // texture footprint along z
+      return {
+        placeholder: G.ground.usesPlaceholderArt,
+        img: [tex.image.width, tex.image.height],
+        repeat: [tex.repeat.x, tex.repeat.y],
+        wrap: tex.wrapS === 1000 && tex.wrapT === 1000,
+        instanced: mesh.isInstancedMesh === true,
+        instances: mesh.count,
+        texelsX: tex.image.width / footX,
+        texelsZ: tex.image.height / footZ,
+        lattice: cfg.TILE_LENGTH / footZ,
+        scenery: G.scenery.describe(),
+        campusBands: G.campus.describe().bands.map((b) => b.id),
+        calls: G.renderer.info.render.calls,
+      };
+    });
+    rep.check('W1 surface = committed 1536×1280 paver tile, RepeatWrapping, repeat [1,2]',
+      t.placeholder === false && t.img[0] === 1536 && t.img[1] === 1280
+      && t.wrap && t.repeat[0] === 1 && t.repeat[1] === 2,
+      `${t.img.join('×')} repeat ${t.repeat.join('×')} wrap ${t.wrap}`);
+    rep.check('W2 lattice proof: ring period = exactly 2 pattern periods (seam impossible)',
+      Math.abs(t.lattice - 2) < 1e-9, `TILE_LENGTH ÷ (footprint/repeat.y) = ${t.lattice}`);
+    rep.check('W4a square texels 128 px/m on both axes (block scale identical, no stretch)',
+      Math.abs(t.texelsX - 128) < 1e-6 && Math.abs(t.texelsZ - 128) < 1e-6,
+      `${t.texelsX} / ${t.texelsZ} px per m`);
+    rep.check('W7 one instanced mesh, one material, one texture; draw calls in budget',
+      t.instanced && t.instances === 20 && t.calls <= 51,
+      `InstancedMesh ×${t.instances}, ${t.calls} calls at start`);
+    rep.check('W6 gate/scenery layer absent by default, campus bands unchanged',
+      t.scenery.usesPlaceholderArt === true && t.scenery.loaded.length === 0
+      && t.scenery.horizon === null && t.scenery.rings.length === 0
+      && ['border', 'railing', 'hedge', 'veranda', 'colonnade'].every((id) => t.campusBands.includes(id))
+      && t.campusBands.filter((id) => id.startsWith('building:')).length === 2,
+      `bands: ${t.campusBands.join(' ')}`);
+
+    // ---- freeze the world at the start line (paused still renders) --------
+    const frame0 = await page.evaluate(() => {
+      const G = window.__game;
+      G.startGame();                       // resets obstacles + collectibles
+      G.pauseGame();                       // freeze; render loop continues
+      document.getElementById('pause-screen').style.display = 'none';
+      return G.renderer.info.render.frame;
+    });
+    await waitFor(page, (f0) => window.__game.renderer.info.render.frame > f0 + 1,
+      { timeout: 60000, label: 'paused frame render' }, [frame0]);
+
+    const marks = await page.evaluate(() => {
+      const G = window.__game;
+      const cam = G.camera;
+      const V = cam.position.constructor;
+      const proj = (x, y, z) => {
+        const v = new V(x, y, z); v.project(cam);
+        return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight };
+      };
+      const s = G.player.sprite;
+      const cy = s.center ? s.center.y : 0.5;
+      // side columns must stop where the projected corridor (|x| ≤ 6 m)
+      // narrows past the column offset, else they leave the pavement
+      const sideCol = (frac, label) => {
+        const x = Math.round(innerWidth * frac);
+        const off = Math.abs(x - innerWidth / 2);
+        let yTop = Math.round(proj(0, 0, -240).y);
+        for (let z = 0; z >= -240; z -= 2) {
+          const hw = (proj(6, 0, z).x - proj(-6, 0, z).x) / 2;
+          if (hw <= off + 8) { yTop = Math.round(proj(0, 0, z).y); break; }
+        }
+        return { x, y0: Math.round(proj(0, 0, 0).y) - 2, yTop, label };
+      };
+      return {
+        feet: proj(0, 0, 0),
+        head: proj(s.position.x, s.position.y + s.scale.y * (1 - cy), s.position.z),
+        w: innerWidth, h: innerHeight,
+        cols: [
+          { x: Math.round(innerWidth / 2), y0: Math.round(proj(s.position.x, s.position.y + s.scale.y * (1 - cy), s.position.z).y) - 6, yTop: Math.round(proj(0, 0, -240).y), label: 'centre' },
+          sideCol(0.44, 'mid-left'),
+          sideCol(0.56, 'mid-right'),
+          sideCol(0.37, 'left'),
+          sideCol(0.63, 'right'),
+        ],
+      };
+    });
+
+    const shot = shotPixels(await page.screenshot());
+
+    // ---- W3 continuity: scanlines feet→horizon contain only pavement ------
+    const violations = [];
+    let scanned = 0;
+    for (const c of marks.cols) {
+      for (let y = Math.max(0, c.yTop); y <= Math.min(marks.h - 1, c.y0); y++) {
+        scanned++;
+        const [r, gg, b] = shot.at(c.x, y);
+        const cls = isGrass(r, gg, b) ? 'grass' : isSky(r, gg, b) ? 'sky' : isBlack(r, gg, b) ? 'black' : null;
+        if (cls) { violations.push(`${c.label}@(${c.x},${y})=${cls}`); if (violations.length > 6) break; }
+      }
+    }
+    rep.check('W3 one continuous surface: scanlines feet→vanishing point are pure pavement',
+      violations.length === 0 && scanned > 300,
+      violations.join(' ') || `3 columns, ${scanned} rows clean`);
+
+    // ---- W4b rendered block scale follows perspective ---------------------
+    // Course (horizontal joint) lines are the strongest rendered feature:
+    // their screen rows must land where the camera projects z = −0.5·k m.
+    // At 20 m a 0.25 m module is ~4 px at 720p — below resolvable detail —
+    // so the horizon scale is pinned by the exact mapping math (W2/W4a) and
+    // the rendered check runs over the resolvable near/mid field.
+    const courseYs = await page.evaluate(() => {
+      const G = window.__game;
+      const cam = G.camera;
+      const V = cam.position.constructor;
+      // the resolvable near field is camera-side of the player (z > 0):
+      // the ring's first plane spans z ∈ [0, 20]
+      const ys = [];
+      for (let k = 0; k <= 44; k++) {
+        const v = new V(0, 0, 0.5 * k).project(cam);
+        ys.push((-v.y * 0.5 + 0.5) * innerHeight);
+      }
+      return ys;
+    });
+    const y0b = Math.round(marks.feet.y) - 4;
+    const y1b = Math.min(marks.h - 1, Math.round(marks.feet.y) + 150);
+    const nRows = y1b - y0b;
+    // two side bands: the centre carries the player's contact shadow, which
+    // would fake a course line
+    const rowL = new Float64Array(nRows);
+    for (let j = 0; j < nRows; j++) {
+      let s = 0, c = 0;
+      for (const rx of [[0.375, 0.47], [0.53, 0.625]]) {
+        for (let x = Math.round(marks.w * rx[0]); x < Math.round(marks.w * rx[1]); x++) {
+          const [r, gg, b] = shot.at(x, y0b + j);
+          s += 0.2126 * r + 0.7152 * gg + 0.0722 * b; c++;
+        }
+      }
+      rowL[j] = s / c;
+    }
+    {
+      let m = 0; for (let i = 0; i < nRows; i++) m += rowL[i]; m /= nRows;
+      for (let i = 0; i < nRows; i++) rowL[i] -= m;
+      const HW = 6, win = new Float64Array(nRows);
+      let acc = 0;
+      for (let i = 0; i < nRows; i++) { acc += rowL[i]; if (i >= 2 * HW + 1) acc -= rowL[i - 2 * HW - 1]; win[i] = acc; }
+      for (let i = 0; i < nRows; i++) {
+        const a = Math.max(0, i - HW), b = Math.min(nRows - 1, i + HW);
+        rowL[i] -= (win[b] - (a > 0 ? win[a - 1] : 0)) / (b - a + 1);
+      }
+      let sd = 0; for (let i = 0; i < nRows; i++) sd += rowL[i] * rowL[i]; sd = Math.sqrt(sd / nRows);
+      const dipRows = [];
+      for (let i = 1; i < nRows - 1; i++) {
+        if (rowL[i] < -sd && rowL[i] <= rowL[i - 1] && rowL[i] <= rowL[i + 1]) dipRows.push(y0b + i);
+      }
+      const merged = [];
+      for (const y of dipRows) {
+        if (merged.length && y - merged[merged.length - 1] <= 2) merged[merged.length - 1] = (merged[merged.length - 1] + y) / 2;
+        else merged.push(y);
+      }
+      // match predicted course lines to rendered dips; the texture's phase
+      // along z is arbitrary, so align the predicted fan to the first dip
+      const pred = courseYs.filter((y) => y >= y0b - 10 && y <= y1b + 10);
+      let matched = 0, ratioOk = false;
+      if (merged.length >= 4 && pred.length >= 4) {
+        let bj = 0, bd = Infinity;
+        pred.forEach((p, i) => { const d = Math.abs(p - merged[0]); if (d < bd) { bd = d; bj = i; } });
+        const shift = merged[0] - pred[bj];
+        for (let i = bj; i < pred.length; i++) {
+          const ey = pred[i] + shift;
+          if (ey > y1b) break;
+          if (merged.some((y) => Math.abs(y - ey) <= 3)) matched++;
+        }
+        const mSp = [], eSp = [];
+        for (let i = 1; i < merged.length; i++) mSp.push(merged[i] - merged[i - 1]);
+        for (let i = bj + 1; i < Math.min(pred.length, bj + merged.length); i++) eSp.push(pred[i] - pred[i - 1]);
+        ratioOk = mSp.length >= 3 && eSp.length >= 3
+          && mSp.slice(0, eSp.length).every((v, i) => Math.abs(v - eSp[i]) / eSp[i] < 0.2);
+      }
+      // projected 0.5 m course spacing at 20 m ahead (informational: the
+      // horizon scale itself is pinned by the exact module math, W2/W4a)
+      const far20 = await page.evaluate(() => {
+        const G = window.__game;
+        const cam = G.camera;
+        const V = cam.position.constructor;
+        const y1 = new V(0, 0, -20).project(cam), y2 = new V(0, 0, -20.5).project(cam);
+        return Math.abs((-y1.y * 0.5 + 0.5) - (-y2.y * 0.5 + 0.5)) * innerHeight;
+      });
+      rep.check('W4b rendered course lines follow the perspective ratio (scale consistent to the resolvable horizon)',
+        matched >= 6 && ratioOk,
+        `${matched} course lines matched ±3px; spacing ratio ok ${ratioOk}; projected 0.5 m @20 m = ${far20.toFixed(1)} px (pinned by W2/W4a)`);
+    }
+
+    // ---- W5 near-field pavement carries no road markings ------------------
+    let bad5 = 0, seen5 = 0;
+    for (const rx of [[0.32, 0.44], [0.56, 0.68]]) {
+      for (let y = Math.round(marks.feet.y) + 6; y < Math.min(marks.h, Math.round(marks.feet.y) + 86); y++) {
+        for (let x = Math.round(marks.w * rx[0]); x < Math.round(marks.w * rx[1]); x++) {
+          const [r, gg, b] = shot.at(x, y);
+          seen5++;
+          if (isBlue(r, gg, b) || isVividYellow(r, gg, b)) bad5++;
+        }
+      }
+    }
+    rep.check('W5 near-field pavement: zero blue-dominant / vivid-yellow pixels',
+      bad5 === 0, `${bad5} marked pixels in ${seen5}`);
+
+    // ---- §3.3 the fallback is the same walkway surface --------------------
+    const srv2 = await createServer(ROOT, { hideAssets: true });
+    let g2;
+    try {
+      g2 = await openGame(browser, srv2.base);
+      const frameF = await g2.page.evaluate(() => {
+        const G = window.__game;
+        G.startGame(); G.pauseGame();
+        document.getElementById('pause-screen').style.display = 'none';
+        return G.renderer.info.render.frame;
+      });
+      await waitFor(g2.page, (f0) => window.__game.renderer.info.render.frame > f0 + 1,
+        { timeout: 60000, label: 'fallback paused frame' }, [frameF]);
+      const fb = await g2.page.evaluate(() => {
+        const G = window.__game;
+        const tex = G.ground.tileMesh.material.map;
+        return {
+          ph: G.ground.usesPlaceholderArt,
+          img: [tex.image.width, tex.image.height],
+          repeat: [tex.repeat.x, tex.repeat.y],
+          wrap: tex.wrapS === 1000 && tex.wrapT === 1000,
+        };
+      });
+      const fbRaw = await g2.page.screenshot();
+      const fbShot = shotPixels(fbRaw);
+      let badF = 0, seenF = 0;
+      // rects kept clear of the (wider) placeholder sprite
+      for (let y = Math.round(marks.feet.y) + 6; y < Math.min(marks.h, Math.round(marks.feet.y) + 86); y++) {
+        for (const rx of [[0.28, 0.40], [0.60, 0.72]]) for (let x = Math.round(marks.w * rx[0]); x < Math.round(marks.w * rx[1]); x++) {
+          const [r, gg, b] = fbShot.at(x, y);
+          seenF++;
+          if (isBlue(r, gg, b) || isVividYellow(r, gg, b)) badF++;
+        }
+      }
+      if (badF) fs.writeFileSync('/tmp/fb-suite.png', Buffer.from(fbRaw));
+      rep.check('§3.3 fallback = same walkway module grid, no lane dashes / curb strips',
+        fb.ph && fb.img[0] === 1536 && fb.img[1] === 1280 && fb.repeat[1] === 2 && fb.wrap && badF === 0,
+        `${fb.img.join('×')} repeat ${fb.repeat.join('×')}, markings ${badF}/${seenF}`);
+    } finally {
+      if (g2) await g2.close();
+      await srv2.close();
+    }
+
+    rep.check('no JS errors in walkway suite', g.pageErrors.length === 0, g.pageErrors.join(' | '));
+  } finally {
+    if (g) await g.close();
+    await srv.close();
+  }
+  return rep;
+}
+
+// ---------------------------------------------------------------------------
 const browser = await launchBrowser();
 const reports = [];
 try {
@@ -809,6 +1102,7 @@ try {
   if (wants('views')) reports.push(await suiteViews(browser));
   if (wants('aspect')) reports.push(await suiteAspect(browser));
   if (wants('gameplay')) reports.push(await suiteGameplay(browser));
+  if (wants('walkway')) reports.push(await suiteWalkway(browser));
 } finally {
   await browser.close();
 }

@@ -99,7 +99,7 @@ code changes needed:
 
 ```
 assets/textures/
-├── ground-gravel.png            ← seamless ground texture (1024×1024+, tiles 12×10 u)
+├── ground-gravel.png            ← seamless paver-walkway tile (1536×1280, one 12 m × 10 m surface)
 ├── student-character.png        ← student, transparent bg — SHIPPED (3:5)
 ├── student-character-front.png  ← student facing the camera — SHIPPED (3:5)
 ├── teacher-character.png        ← teacher, transparent bg — SHIPPED (2:3)
@@ -120,44 +120,51 @@ assets/textures/
 - Every texture slot now ships a committed default, so a clean clone has
   **zero** 404s. Delete any file above to fall back to procedural art.
 
-**The ground tile.** `assets/textures/ground-gravel.png` is a real 1024×1024
-seamless tile derived from `assets/source-art/ground-gravel-source.png` by
-`.harness/art/make-ground-tile.mjs`. The source is a perspective photo
-(portrait, transparent above the horizon), so the script needs a square that is
-**pavers only**: it flattens alpha, upscales and applies a **wrap cross-fade**
-(each edge pixel blends with its sample one tile away, which turns the
-wrap-around seam into an ordinary interior adjacency).
+**The ground tile.** `assets/textures/ground-gravel.png` is one continuous
+tiled campus walkway: a purpose-built 1536×1280 seamless tile of interlocking
+rectangular concrete paving blocks in a staggered running bond — light gray,
+beige and subtle reddish-pink blocks with per-block variation, thin 2 px grout
+lines, clean and well maintained. It is synthesized (not cropped from a photo)
+by `.harness/art/make-walkway-tile.mjs`, so it carries no baked shadows,
+stains, moss or patches — nothing with a unique location that could reveal the
+repeat. The design and the verification are specified in
+`research/WALKWAY_PLAN.md`; the as-built numbers live in the same document.
 
-The crop matters: the first version used the *widest* square in the photo and
-therefore included the concrete border, the metal railing and the hedge along
-the left edge — tiled down the road that baked a duplicated wall strip into the
-left lane, ending in a hard diagonal seam. The crop is now chosen by
-`.harness/art/find-ground-crop.mjs`, which colour-classifies every source pixel
-(road / hedge / metal / stone / sky) and scores candidate squares on purity,
-perspective stretch (how much the corridor narrows over the crop's own height —
-that convergence must not be baked into the texture) and top-to-bottom tone
-drift.
+Module arithmetic: the image is 12 m × 10 m at 128 px/m — exactly the ground
+plane's texture footprint (`TILE_WIDTH` × `TILE_LENGTH / TEXTURE_REPEAT_Y`).
+Blocks are 0.25 m × 0.50 m (32×64 px): 48 per course, 20 courses per period,
+alternating courses shifted half a block. 48 and 20 are whole numbers and 20 is
+even, so the pattern closes seamlessly in both axes; and the 20 m ring period
+is exactly two pattern periods, so instance boundaries always land on pattern
+boundaries — the 20 ground planes read as one continuous surface.
 
-Seam score, measured as "wrap-around neighbour difference ÷ average interior
-neighbour difference" on the finished tile:
+Verification (`node art/analyze-walkway-tile.mjs ../assets/textures/ground-gravel.png`):
 
-| | before (raw crop) | after (seamless tile) |
-|---|---|---|
-| columns | ×5.00 | **×0.70** |
-| rows | ×4.33 | **×0.69** |
+| Check | Result |
+|---|---|
+| wrap seam ÷ interior neighbour difference | **×0.82 / ×0.87** (≤ 1.0 ⇒ repeat invisible) |
+| block module (autocorrelation) | 32 px across, 64 px along, 16 px running-bond phase |
+| family mix (gray / beige / pink) | 40 % / 32 % / 28 % (each ≥ 8 %) |
+| max saturation / blue-dominant pixels | 0.18 / none (no markings, no curbs) |
+| aperiodic structure (stain detector) | ≤ 3.2 % at 16 px cells, ≤ 2.5 % at 32 px |
+| joint contrast | ≈ 13/255 over 2 px (thin, readable grout) |
 
-Below 1.0 means the seam is *quieter* than the texture's own average pixel
-pair — i.e. the repeat is invisible. Re-build it with:
+The old photo-crop pipeline (`make-ground-tile.mjs` + `find-ground-crop.mjs`)
+is kept for reference on `assets/source-art/ground-gravel-source.png`.
+Re-build the committed tile with:
 
 ```bash
 cd .harness && npm install pngjs
-node art/find-ground-crop.mjs ../assets/source-art/ground-gravel-source.png   # pick a clean crop
-node art/make-ground-tile.mjs \
-  ../assets/source-art/ground-gravel-source.png /tmp/tile.png 1024 64 155 905 520
-#                          tile size ^^^^  ^  ^^^^^^^^^^^ crop
-#                            fade band ^^^^
-convert /tmp/tile.png -strip -colors 256 ../assets/textures/ground-gravel.png
+node art/make-walkway-tile.mjs ../assets/textures/ground-gravel.png
+node art/analyze-walkway-tile.mjs ../assets/textures/ground-gravel.png
 ```
+
+The procedural fallback (`js/utils/placeholderArt.js`, used when the PNG is
+absent) draws the same paver walkway — same module grid, same families, same
+thin joints, no lane dashes or curb strips. The image is NPOT (1536×1280):
+WebGL2 (the shipped path) mipmaps it as-is; on a WebGL1 device three.js
+resizes to POT exactly as it always did — geometry, gameplay and mapping are
+unaffected.
 
 **Faking 3D turns.** A `THREE.Sprite` always faces the camera, and three.js
 rebuilds its quad in view space every frame — so **object rotation on a Sprite
