@@ -13,9 +13,13 @@
  *   courses      12 / 0.25 = 48 blocks per course   (integer  ⇒ x wraps)
  *   rows         10 / 0.50 = 20 courses per period  (even     ⇒ the running-bond
  *                                                    stagger wraps)
- *   running bond row r is shifted by (r mod 2) × 16 px (half a block), so every
- *                block is bridged by the two blocks above/below it
- *   grout        2 px jointing-sand line (1 px inset per block side)
+ *   PR 3 (interlocking zigzag): column k is shifted along travel by
+ *                (k mod 2) × 32 px (half a block); every vertical joint is a
+ *                square wave (+6 px in the middle half of the block, 0 in the
+ *                outer quarters) → interlocking "I" pavers across the whole
+ *                walkway; column lattice shifted +16 px so red columns 15/31
+ *                sit on the lane lines x = ±2 m
+ *   grout        2 px warm-tan jointing-sand line
  *
  * Why this is seamless BY CONSTRUCTION (plan §2):
  *  - every block is drawn from its wrapped lattice coordinate, so the pixel at
@@ -89,7 +93,14 @@ function familyOf(k, r) {
 
 // jointing sand: neutral, slightly darker than the block field so the thin
 // joint lines stay readable against every family (measured contrast ≈ 20/255)
-const GROUT = [174, 174, 170];
+const GROUT = [196, 178, 148];      // warm tan jointing sand (L ≈ 180)
+
+// red lane-line pavers: luminance-matched (L ≈ 199), saturation ≈ 0.26.
+// Shifted lattice (BAND = 16 px): column 15 centre = 4 m, column 31 = 8 m from
+// the tile's left edge ⇒ world x = −2 m / +2 m (dividers of lanes −4/0/4).
+const BAND = 16;
+const RED = [244, 188, 180];
+const RED_COLS = new Set([15, 31]);
 
 // Per-block variation lives mostly in CHROMA (like real paver mixes, the
 // families share brightness and differ in hue); lightness stays tight so the
@@ -100,50 +111,60 @@ const RAMP = 0.015;        // per-block TL→BR sunlight ramp ±1.5 %
 const CHAMFER = 0.02;      // 1 px chamfer highlight/shade ±2 %
 const SPECKLE = 0.04;      // per-texel aggregate speckle ±4 %
 
+// --------------------------------------------- interlocking zigzag lattice
+// Column lattice shifted +16 px (BAND) so red columns 15/31 are centred on
+// the lane dividers x = ±2 m. Adjacent columns stagger by half a block (32 px)
+// along travel. The left joint of every column is a square wave: offset +6 px
+// in the middle half of that column's block (ly ∈ [16,48)), 0 in the outer
+// quarters; square-wave corners at ly ∈ [16,18) ∪ [46,48), lx < 8.
+// Returns { joint, k, r, lx, ly } of the OWNING block (tab pixels → k−1).
+function pavCell(x, y) {
+    y += 1;   // joint rows straddle the y wrap (1279 | 0) like every interior line
+    const ux = ((x - BAND) % W + W) % W;
+    const k = ux >> 5, lx = ux & 31;
+    const yy = ((y - (k & 1) * 32) % H + H) % H;
+    const ly = yy & 63;
+    const mid = ly >= 16 && ly < 48;
+    const kn = (k + 1) % COLS;
+    const lyN = (((y - (kn & 1) * 32) % H + H) % H) & 63;
+    const midN = lyN >= 16 && lyN < 48;
+    if ((ly >= 16 && ly < 18) || (ly >= 46 && ly < 48)) { if (lx < 8) return { joint: true }; }
+    if (!mid && lx === 0) return { joint: true };
+    if (mid && (lx === 5 || lx === 6)) return { joint: true };
+    if (!midN && lx === 31) return { joint: true };
+    let ko = k, olx = lx;
+    if (mid && lx < 5) { ko = (k + COLS - 1) % COLS; olx = lx + 32; }
+    const yo = ((y - (ko & 1) * 32) % H + H) % H;
+    const oly = yo & 63;
+    if (oly < 2) return { joint: true };
+    return { joint: false, k: ko, r: yo >> 6, lx: olx, ly: oly };
+}
+
 const out = new PNG({ width: W, height: H });
 
 for (let y = 0; y < H; y++) {
-    const r = Math.floor(y / BL);                 // course index
-    const ly = y % BL;                            // pixel row inside the block
-    const off = (r % 2) * (BW / 2);               // running-bond stagger: 0/16 px
     for (let x = 0; x < W; x++) {
-        const ux = (x - off + 2 * W) % W;         // wrapped lattice coordinate
-        const k = Math.floor(ux / BW);            // block column 0..47
-        const lx = ux % BW;                       // pixel column inside the block
-
         const i = (y * W + x) * 4;
         const speck = 1 + (hash2(x, y, 77) - 0.5) * 2 * SPECKLE;
-
-        const isJointX = lx === 0 || lx === BW - 1;   // 2 px vertical joint
-        const isJointY = ly === 0 || ly === BL - 1;   // 2 px horizontal joint
-        if (isJointX || isJointY) {
-            // jointing sand with its own fine speckle
+        const cell = pavCell(x, y);
+        if (cell.joint) {
             for (let c = 0; c < 3; c++) {
                 out.data[i + c] = Math.max(0, Math.min(255, Math.round(GROUT[c] * speck)));
             }
             out.data[i + 3] = 255;
             continue;
         }
-
-        const fam = familyOf(k, r);
-
-        // per-block colour: family base, lightness + hue jitter (seeded)
+        const { k, r, lx, ly } = cell;
         const jl = 1 + (hash2(k, r, 21) - 0.5) * 2 * JITTER;
         const j0 = 1 + (hash2(k, r, 31) - 0.5) * 2 * CHAN_JITTER;
         const j1 = 1 + (hash2(k, r, 32) - 0.5) * 2 * CHAN_JITTER;
         const j2 = 1 + (hash2(k, r, 33) - 0.5) * 2 * CHAN_JITTER;
-
-        // per-block sunlight ramp: top-left lit → bottom-right shaded,
-        // identical on every block (a constant bevel, not a stain)
-        const bx = (lx - 1) / (BW - 3);           // 0..1 inside the face
-        const by = (ly - 1) / (BL - 3);
+        const bx = Math.min(1, (lx - 1) / (BW - 3));
+        const by = (ly - 2) / (BL - 3);
         let shade = 1 + (0.5 - (bx + by) / 2) * 2 * RAMP;
-
-        // 1 px chamfer: lit edge top/left, shaded edge bottom/right
-        if (lx === 1 || ly === 1) shade *= 1 + CHAMFER;
-        else if (lx === BW - 2 || ly === BL - 2) shade *= 1 - CHAMFER;
-
-        const base = FAMILY[fam].rgb;
+        if (lx === 1 || ly === 2) shade *= 1 + CHAMFER;
+        else if (lx === BW - 2 || ly === BL - 1) shade *= 1 - CHAMFER;
+        const base = RED_COLS.has(k) ? RED : FAMILY[familyOf(k, r)].rgb;
         const f = shade * jl * speck;
         out.data[i]     = Math.max(0, Math.min(255, Math.round(base[0] * f * j0)));
         out.data[i + 1] = Math.max(0, Math.min(255, Math.round(base[1] * f * j1)));
@@ -166,15 +187,16 @@ fs.unlinkSync(tmpTrue);
 
 // family census over the block lattice (not pixels)
 const famCount = { gray: 0, beige: 0, pink: 0 };
-for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) famCount[familyOf(k, r)]++;
-const faces = COLS * ROWS;
+for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) if (!RED_COLS.has(k)) famCount[familyOf(k, r)]++;
+const faces = (COLS - RED_COLS.size) * ROWS;
 
 const report = {
     size: `${W}×${H}`,
     pxPerMetre: PXM,
     block: `${BW}×${BL} px (0.25 m × 0.50 m)`,
     courses: COLS, rows: ROWS,
-    stagger: `${BW / 2} px alternating (running bond)`,
+    stagger: `${BL / 2} px between adjacent columns (along travel); zigzag joints ±6 px square wave`,
+    redColumns: `${[...RED_COLS].join(',')} (world x = ±2 m) rgb ${RED.join(',')}`,
     families: Object.fromEntries(Object.entries(famCount).map(([f, n]) =>
         [f, { blocks: n, pct: +(100 * n / faces).toFixed(1) }])),
     grout: `${GROUT.join(',')} @ 2 px`,

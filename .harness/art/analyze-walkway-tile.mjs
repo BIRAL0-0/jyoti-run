@@ -68,8 +68,46 @@ function firstStrongPeak(r, minLag, maxLag) {
     }
     return { lag: best, v: +bv.toFixed(3) };
 }
+const BAND = 16, COLS = 48;
+// --------------------------------------------- interlocking zigzag lattice
+// Column lattice shifted +16 px (BAND) so red columns 15/31 are centred on
+// the lane dividers x = ±2 m. Adjacent columns stagger by half a block (32 px)
+// along travel. The left joint of every column is a square wave: offset +6 px
+// in the middle half of that column's block (ly ∈ [16,48)), 0 in the outer
+// quarters; square-wave corners at ly ∈ [16,18) ∪ [46,48), lx < 8.
+// Returns { joint, k, r, lx, ly } of the OWNING block (tab pixels → k−1).
+function pavCell(x, y) {
+    y += 1;   // joint rows straddle the y wrap (1279 | 0) like every interior line
+    const ux = ((x - BAND) % W + W) % W;
+    const k = ux >> 5, lx = ux & 31;
+    const yy = ((y - (k & 1) * 32) % H + H) % H;
+    const ly = yy & 63;
+    const mid = ly >= 16 && ly < 48;
+    const kn = (k + 1) % COLS;
+    const lyN = (((y - (kn & 1) * 32) % H + H) % H) & 63;
+    const midN = lyN >= 16 && lyN < 48;
+    if ((ly >= 16 && ly < 18) || (ly >= 46 && ly < 48)) { if (lx < 8) return { joint: true }; }
+    if (!mid && lx === 0) return { joint: true };
+    if (mid && (lx === 5 || lx === 6)) return { joint: true };
+    if (!midN && lx === 31) return { joint: true };
+    let ko = k, olx = lx;
+    if (mid && lx < 5) { ko = (k + COLS - 1) % COLS; olx = lx + 32; }
+    const yo = ((y - (ko & 1) * 32) % H + H) % H;
+    const oly = yo & 63;
+    if (oly < 2) return { joint: true };
+    return { joint: false, k: ko, r: yo >> 6, lx: olx, ly: oly };
+}
+
+// along-travel profile of ONE column strip (columns stagger by 32 px, so the
+// whole-image row profile would show a 32 px period)
+function columnProfile(k) {
+    const p = new Float64Array(H);
+    const x0 = (BAND + k * 32 + 8) % W;
+    for (let y = 0; y < H; y++) for (let x = x0; x < x0 + 16; x++) p[y] += lum[y * W + (x % W)] / 16;
+    return p;
+}
 const rx = autocorr(courseProfile(0));           // one course: joints every block
-const ry = autocorr(profY);
+const ry = autocorr(columnProfile(0));
 const px = firstStrongPeak(rx, 24, 64);         // expect 32 px across (block width)
 const py = firstStrongPeak(ry, 16, 128);        // expect 64 px along (one course)
 
@@ -88,8 +126,18 @@ function bestShift(a, b) {
     }
     return best;
 }
+// adjacent-COLUMN phase along travel: best y-shift aligning column k with k+1
+function bestShiftY(a, b) {
+    let best = 0, bv = -Infinity;
+    for (let s = 0; s < 64; s++) {
+        let dot = 0;
+        for (let y = 0; y < H; y++) dot += a[y] * b[(y + s) % H];
+        if (dot > bv) { bv = dot; best = s; }
+    }
+    return best;
+}
 const shifts = [];
-for (let r = 0; r + 1 < 20; r++) shifts.push(bestShift(courseProfile(r), courseProfile(r + 1)));
+for (let k = 0; k < 48; k += 2) shifts.push(bestShiftY(columnProfile(k), columnProfile(k + 1)));
 const phase = shifts.reduce((a, b) => a + b, 0) / shifts.length;
 
 // ------------------------------------------------------- T3 colour families
@@ -97,11 +145,20 @@ const phase = shifts.reduce((a, b) => a + b, 0) / shifts.length;
 // (yellow-leaning: G−B large) vs pink (G−B small)
 const fam = { gray: 0, beige: 0, pink: 0 };
 const faces = [];
+let redFaces = 0;
 for (let r = 0; r < 20; r++) {
-    const off = (r % 2) * 16;
     for (let k = 0; k < 48; k++) {
-        const cx = Math.floor((k * 32 + off + 16) % W);
-        const cy = r * 64 + 32;
+        const cx = (BAND + k * 32 + 16) % W;
+        const cy = ((k % 2) * 32 + r * 64 + 32) % H;
+        if (k === 15 || k === 31) {   // red lane-line columns (tolerated, counted apart)
+            let R = 0, G = 0, B = 0;   // 7×7 face-centre mean (speckle-robust)
+            for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+                const j = (((cy + dy + H) % H) * W + cx + dx) * 4;
+                R += data[j] / 49; G += data[j + 1] / 49; B += data[j + 2] / 49;
+            }
+            if (R - B >= 40 && R - G >= 30) redFaces++;
+            continue;
+        }
         const i = (cy * W + cx) * 4;
         const R = data[i], G = data[i + 1], B = data[i + 2];
         const f = (R - B) < 12 ? 'gray' : (G - B) > 12 ? 'beige' : 'pink';
@@ -109,7 +166,7 @@ for (let r = 0; r < 20; r++) {
         faces.push([R, G, B]);
     }
 }
-const famPct = Object.fromEntries(Object.entries(fam).map(([f, n]) => [f, +(100 * n / 960).toFixed(1)]));
+const famPct = Object.fromEntries(Object.entries(fam).map(([f, n]) => [f, +(100 * n / 880).toFixed(1)]));
 
 // --------------------------------------------------- T4 saturation / no blue
 let maxSat = 0, blueDom = 0, maxYellow = 0;
@@ -160,22 +217,16 @@ function aperiodicDev(cells, periodX, periodY) {
 }
 const c16 = cellMeans(16);                       // 96×80 cells (16× downsample)
 const c32 = cellMeans(32);
-const t5a = aperiodicDev(c16, 2, 4);             // 16 px cells vs phase expectation
-const t5b = aperiodicDev(c32, 1, 2);             // 32 px cells vs phase expectation
+const t5a = aperiodicDev(c16, 4, 4);   // zigzag lattice period 64×64 px             // 16 px cells vs phase expectation
+const t5b = aperiodicDev(c32, 2, 2);             // 32 px cells vs phase expectation
 const maxDev = t5a.ap, maxDev32 = t5b.ap;
 
 // ------------------------------------------------------- T6 joint contrast
 // joint pixels: 1 px either side of each lattice line; faces: interior ≥2 px
 let jSum = 0, jN = 0, fSum = 0, fN = 0;
-for (let y = 0; y < H; y++) {
-    const r = Math.floor(y / 64), ly = y % 64;
-    const off = (r % 2) * 16;
-    for (let x = 0; x < W; x++) {
-        const lx = ((x - off + 2 * W) % W) % 32;
-        const p = lum[y * W + x];
-        if (lx <= 1 || lx >= 30 || ly <= 1 || ly >= 62) { jSum += p; jN++; }
-        else { fSum += p; fN++; }
-    }
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const p = lum[y * W + x];
+    if (pavCell(x, y).joint) { jSum += p; jN++; } else { fSum += p; fN++; }
 }
 const jointL = jSum / jN, faceL = fSum / fN;
 const t6 = { joint: +jointL.toFixed(1), face: +faceL.toFixed(1), contrast: +(faceL - jointL).toFixed(1) };
@@ -184,8 +235,9 @@ const t6 = { joint: +jointL.toFixed(1), face: +faceL.toFixed(1), contrast: +(fac
 const checks = [
     ['T1 wrap seam invisible (ratio ≤ 1.0)', t1.colRatio <= 1.0 && t1.rowRatio <= 1.0, `${t1.colRatio} / ${t1.rowRatio}`],
     ['T2 module 32 px across, 64 px along', px.lag === 32 && py.lag === 64, `x ${px.lag} (v ${px.v}), y ${py.lag} (v ${py.v})`],
-    ['T2b running-bond phase ≈ 16 px between courses', Math.abs(phase - 16) <= 1, `mean shift ${phase.toFixed(2)} px`],
+    ['T2b adjacent-column phase ≈ 32 px along travel', Math.abs(phase - 32) <= 1, `mean shift ${phase.toFixed(2)} px`],
     ['T3 all three families ≥ 8 %', famPct.gray >= 8 && famPct.beige >= 8 && famPct.pink >= 8, JSON.stringify(famPct)],
+    ['T3b red lane columns 15/31 red on every course', redFaces === 40, `${redFaces}/40 red faces`],
     ['T4 max saturation ≤ 0.35', maxSat <= 0.35, maxSat.toFixed(3)],
     ['T4b no blue-dominant / vivid-yellow pixel', blueDom === 0 && maxYellow === 0, `blue ${blueDom}, yellow ${maxYellow}`],
     ['T5 no aperiodic structure at 16 px cells (≤ 4 %)', maxDev <= 0.04, `aperiodic ${(100 * maxDev).toFixed(2)} % (raw lattice grain ${(100 * t5a.raw).toFixed(2)} %)`],
